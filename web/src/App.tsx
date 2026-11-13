@@ -6,6 +6,7 @@ import { AuthScreen } from './components/AuthScreen'
 import { ChatView } from './components/ChatView'
 import { Inspector } from './components/Inspector'
 import { ProjectModal } from './components/ProjectModal'
+import { PreviewDrawer } from './components/PreviewDrawer'
 import { SettingsModal } from './components/SettingsModal'
 import { Sidebar } from './components/Sidebar'
 import { Toasts } from './components/Toasts'
@@ -109,6 +110,7 @@ export default function App() {
       <Sidebar />
       <ChatView />
       {(hasDetail || inspectorTab === 'memory') && inspectorOpen ? <Inspector /> : null}
+      <PreviewDrawer />
 
       {modal?.type === 'settings' ? (
         <SettingsModal initialTab={modal.tab || 'providers'} />

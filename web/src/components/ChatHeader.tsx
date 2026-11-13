@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   Cpu,
   FolderKanban,
+  FolderOpen,
   Menu,
   MoreHorizontal,
   Moon,
@@ -245,6 +246,7 @@ export function ChatHeader() {
   const setSidebarOpen = useAppStore((state) => state.setSidebarOpen)
   const toggleInspector = useAppStore((state) => state.toggleInspector)
   const inspectorOpen = useAppStore((state) => state.inspectorOpen)
+  const openFilesPanel = useAppStore((state) => state.openFilesPanel)
   const openChat = useAppStore((state) => state.openChat)
   const updateChat = useAppStore((state) => state.updateChat)
   const deleteChat = useAppStore((state) => state.deleteChat)
@@ -377,6 +379,16 @@ export function ChatHeader() {
             Stop
           </Button>
         ) : null}
+
+        <button
+          type="button"
+          onClick={openFilesPanel}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-panel2 hover:text-ink"
+          title="Project files"
+          aria-label="Project files"
+        >
+          <FolderOpen className="h-4 w-4" />
+        </button>
 
         <button
           type="button"

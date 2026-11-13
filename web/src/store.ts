@@ -10,6 +10,7 @@ import type {
   ChatDetail,
   MemoryGraph,
   Message,
+  PreviewTarget,
   Project,
   Provider,
   Run,
@@ -89,6 +90,8 @@ interface AppState {
   search: string
   archivedView: boolean
   inspectorOpen: boolean
+  previewOpen: boolean
+  previewTarget: PreviewTarget | null
   sidebarOpen: boolean
   theme: 'light' | 'dark'
   modal: ModalState
@@ -116,6 +119,9 @@ interface AppState {
 
   setActiveProject: (projectId: string) => void
   setInspectorTab: (tab: InspectorTab) => void
+  openPreview: (target: PreviewTarget) => void
+  openFilesPanel: () => void
+  closePreview: () => void
   openMemory: (projectId?: string) => Promise<void>
   refreshMemory: () => Promise<void>
   createMemoryLink: (agentA: string, agentB: string) => Promise<void>
@@ -499,6 +505,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   search: '',
   archivedView: false,
   inspectorOpen: typeof window !== 'undefined' ? window.innerWidth >= 1280 : true,
+  previewOpen: false,
+  previewTarget: null,
   sidebarOpen: false,
   theme: initialTheme(),
   modal: null,
@@ -683,6 +691,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const wasActive = get().activeProjectId === id
     try {
       await api.deleteProject(id)
+      set({ previewOpen: false, previewTarget: null })
       await get().refresh()
       if (wasActive) {
         const remaining = get().projects
@@ -803,6 +812,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       search: '',
       sidebarOpen: false,
       memory: null,
+      previewOpen: false,
+      previewTarget: null,
     })
     try {
       localStorage.setItem('ocx.project', projectId)
@@ -817,6 +828,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ inspectorTab, inspectorOpen: true, sidebarOpen: false })
     if (inspectorTab === 'memory' && !get().memory) void get().refreshMemory()
   },
+
+  openPreview: (target) => set({ previewTarget: target, previewOpen: true, sidebarOpen: false }),
+
+  openFilesPanel: () =>
+    set({ previewTarget: null, previewOpen: true, sidebarOpen: false }),
+
+  closePreview: () => set({ previewOpen: false, previewTarget: null }),
 
   openMemory: async (projectId) => {
     const state = get()

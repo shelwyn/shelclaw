@@ -106,8 +106,18 @@ function addUsage(a: Usage, b: Usage): Usage {
   }
 }
 
-function supportsTools(provider: Provider): boolean {
-  return provider.config?.tools !== false
+/**
+ * Run harnesses inside the project workspace unless the provider explicitly
+ * configures its own working directory. This makes agent-created files visible
+ * in the project file browser and preview panel.
+ */
+function withWorkspaceWorkdir(provider: Provider, workspacePath: string): Provider {
+  const config = provider.config || {}
+  if (!workspacePath || (typeof config.workdir === 'string' && config.workdir.trim())) return provider
+  return { ...provider, config: { ...config, workdir: workspacePath } }
+}
+
+function supportsTools(provider: Provider): boolean {  return provider.config?.tools !== false
 }
 
 function usesPromptTools(provider: Provider): boolean {
@@ -426,6 +436,7 @@ export class Orchestrator {
       throw new AppError('No harness configured yet. Open Settings → Connect Harness and add one.', 400)
     }
     validateModel(choice.provider, choice.model)
+    const provider = withWorkspaceWorkdir(choice.provider, project.workspacePath)
 
     const shouldTitle = settings.autoTitle && (!chat.title || chat.title === 'New chat')
     chat = updateChat(chatId, {
@@ -478,7 +489,7 @@ export class Orchestrator {
       chat,
       run,
       agent,
-      provider: choice.provider,
+      provider,
       model: choice.model,
       depth: 0,
       remainingDepth: maxDepth,
@@ -900,6 +911,7 @@ const { run, chat } = ctx
         error: err instanceof Error ? err.message : String(err),
       }
     }
+    const childProvider = withWorkspaceWorkdir(choice.provider, parent.project?.workspacePath || '')
 
     const maxAgents = Math.max(1, parent.settings.maxAgents || 24)
     const spawned = this.agentCounts.get(parent.rootRunId) || 0
@@ -976,7 +988,7 @@ const { run, chat } = ctx
       chat: childChat,
       run: childRun,
       agent,
-      provider: choice.provider,
+      provider: childProvider,
       model: choice.model,
       depth: parent.depth + 1,
       remainingDepth: childBudget,

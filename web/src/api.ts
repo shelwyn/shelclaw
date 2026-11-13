@@ -5,10 +5,12 @@ import type {
   ChatDetail,
   ChatFile,
   MemoryGraph,
+  PreviewPayload,
   Project,
   Provider,
   QueuedMessage,
   Run,
+  WorkspaceFile,
 } from './types'
 
 const TOKEN_KEY = 'ocx.token'
@@ -71,6 +73,26 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.text()) as T
 }
 
+async function fetchBlob(path: string): Promise<Blob> {
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set('authorization', `Bearer ${token}`)
+  const res = await fetch(path, { headers })
+  if (!res.ok) throw new ApiError('Could not read the file.', res.status)
+  return res.blob()
+}
+
+function saveBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = name
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) })
 
 export const api = {
@@ -103,21 +125,23 @@ export const api = {
   },
   deleteChatFile: (fileId: string) =>
     request<{ ok: boolean }>(`/api/files/${fileId}`, { method: 'DELETE' }),
+  previewChatFile: (fileId: string) =>
+    request<PreviewPayload>(`/api/files/${fileId}/preview`),
+  chatFileBlob: (fileId: string) => fetchBlob(`/api/files/${fileId}?inline=1`),
   downloadChatFile: async (file: { id: string; name: string }) => {
-    const headers = new Headers()
-    const token = getToken()
-    if (token) headers.set('authorization', `Bearer ${token}`)
-    const res = await fetch(`/api/files/${file.id}`, { headers })
-    if (!res.ok) throw new ApiError('Could not download the file.', res.status)
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = file.name
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    URL.revokeObjectURL(url)
+    saveBlob(await fetchBlob(`/api/files/${file.id}`), file.name)
+  },
+
+  workspaceFiles: (projectId: string) =>
+    request<{ root: string; files: WorkspaceFile[] }>(`/api/projects/${projectId}/files`),
+  previewWorkspaceFile: (projectId: string, filePath: string) =>
+    request<PreviewPayload>(
+      `/api/projects/${projectId}/preview?path=${encodeURIComponent(filePath)}`,
+    ),
+  workspaceFileBlob: (projectId: string, filePath: string) =>
+    fetchBlob(`/api/projects/${projectId}/file?path=${encodeURIComponent(filePath)}`),
+  downloadWorkspaceFile: async (projectId: string, filePath: string, name: string) => {
+    saveBlob(await fetchBlob(`/api/projects/${projectId}/file?path=${encodeURIComponent(filePath)}`), name)
   },
 
   createProvider: (body: Partial<Provider> & { apiKey?: string }) =>

@@ -9,6 +9,12 @@ import { config } from './config.js'
 import { db } from './db.js'
 import { AppError } from './errors.js'
 import { orchestrator } from './orchestrator/engine.js'
+import {
+  buildPreview,
+  detectMimeType,
+  listWorkspaceFiles,
+  resolveWorkspaceFile,
+} from './preview.js'
 import { discoverModels, PROVIDER_KINDS, testProvider } from './providers/index.js'
 import {
   activeRuns,
@@ -510,12 +516,69 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const file = getChatFile(id)
     if (!file) throw new AppError('File not found.', 404)
     if (!fs.existsSync(file.storedPath)) throw new AppError('File is missing from the workspace.', 404)
-    reply.header('content-type', file.mimeType || 'application/octet-stream')
+    const inline = String((req.query as Record<string, unknown> | undefined)?.inline || '') === '1'
+    reply.header('content-type', file.mimeType || detectMimeType(file.name))
     reply.header(
       'content-disposition',
-      `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
     )
     return reply.send(fs.createReadStream(file.storedPath))
+  })
+
+  app.get('/api/files/:id/preview', async (req) => {
+    const { id } = req.params as { id: string }
+    const file = getChatFile(id)
+    if (!file) throw new AppError('File not found.', 404)
+    if (!fs.existsSync(file.storedPath)) throw new AppError('File is missing from the workspace.', 404)
+    return buildPreview(file.storedPath, file.name, file.mimeType, file.size)
+  })
+
+  app.get('/api/projects/:id/files', async (req) => {
+    const { id } = req.params as { id: string }
+    const project = getProject(id)
+    if (!project) throw new AppError('Project not found.', 404)
+    if (!project.workspacePath) {
+      throw new AppError('This project has no workspace folder. Set one in project settings.', 400)
+    }
+    return {
+      root: project.workspacePath,
+      files: listWorkspaceFiles(project.workspacePath),
+    }
+  })
+
+  app.get('/api/projects/:id/preview', async (req) => {
+    const { id } = req.params as { id: string }
+    const project = getProject(id)
+    if (!project) throw new AppError('Project not found.', 404)
+    if (!project.workspacePath) {
+      throw new AppError('This project has no workspace folder. Set one in project settings.', 400)
+    }
+    const relative = String((req.query as Record<string, unknown> | undefined)?.path || '')
+    if (!relative) throw new AppError('A file path is required.', 400)
+    const target = resolveWorkspaceFile(project.workspacePath, relative)
+    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+      throw new AppError('File not found in the workspace.', 404)
+    }
+    return buildPreview(target, path.basename(target))
+  })
+
+  app.get('/api/projects/:id/file', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const project = getProject(id)
+    if (!project) throw new AppError('Project not found.', 404)
+    if (!project.workspacePath) {
+      throw new AppError('This project has no workspace folder. Set one in project settings.', 400)
+    }
+    const relative = String((req.query as Record<string, unknown> | undefined)?.path || '')
+    if (!relative) throw new AppError('A file path is required.', 400)
+    const target = resolveWorkspaceFile(project.workspacePath, relative)
+    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+      throw new AppError('File not found in the workspace.', 404)
+    }
+    const name = path.basename(target)
+    reply.header('content-type', detectMimeType(name))
+    reply.header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(name)}`)
+    return reply.send(fs.createReadStream(target))
   })
 
   app.delete('/api/files/:id', async (req) => {

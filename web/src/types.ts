@@ -183,6 +183,42 @@ export interface QueuedMessage {
   createdAt: number
 }
 
+export interface WorkspaceFile {
+  path: string
+  name: string
+  size: number
+  modifiedAt: number
+}
+
+export interface PreviewSheet {
+  name: string
+  rows: string[][]
+}
+
+export interface PreviewPayload {
+  kind: 'pdf' | 'image' | 'text' | 'spreadsheet' | 'document' | 'unsupported'
+  name: string
+  mimeType: string
+  size: number
+  content?: string
+  truncated?: boolean
+  sheets?: PreviewSheet[]
+  html?: string
+  message?: string
+  warnings?: string[]
+}
+
+export type PreviewTarget =
+  | { source: 'chat'; file: ChatFile }
+  | {
+      source: 'workspace'
+      projectId: string
+      path: string
+      name: string
+      size: number
+      modifiedAt: number
+    }
+
 export type BusEvent = {
   type: string
   at: number

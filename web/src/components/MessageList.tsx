@@ -296,24 +296,52 @@ function formatSize(bytes: number | undefined): string {
 }
 
 function MessageAttachments({ metadata }: { metadata: Record<string, unknown> }) {
+  const openPreview = useAppStore((state) => state.openPreview)
   const raw = metadata?.attachments
   if (!Array.isArray(raw) || !raw.length) return null
   const files = raw as MessageAttachment[]
   return (
     <div className={cn('flex flex-wrap gap-1.5', 'mb-1.5')}>
       {files.map((file) => (
-        <button
+        <span
           key={file.id}
-          type="button"
-          onClick={() => void api.downloadChatFile(file)}
-          className="group inline-flex max-w-full items-center gap-1.5 rounded-lg border border-accent/25 bg-panel/70 py-1 pl-2 pr-1.5 text-[10.5px] text-muted transition-colors hover:border-accent/50 hover:text-ink"
-          title={`Download ${file.name}`}
+          className="inline-flex max-w-full items-center rounded-lg border border-accent/25 bg-panel/70 text-[10.5px] text-muted transition-colors hover:border-accent/50 hover:text-ink"
         >
-          <FileText className="h-3 w-3 shrink-0 text-accent" />
-          <span className="max-w-[180px] truncate font-medium">{file.name}</span>
-          {file.size ? <span className="shrink-0 text-[9px] text-faint">{formatSize(file.size)}</span> : null}
-          <Download className="h-2.5 w-2.5 shrink-0 text-faint group-hover:text-accent" />
-        </button>
+          <button
+            type="button"
+            onClick={() =>
+              openPreview({
+                source: 'chat',
+                file: {
+                  id: file.id,
+                  projectId: '',
+                  chatId: '',
+                  messageId: '',
+                  name: file.name,
+                  storedPath: '',
+                  mimeType: file.mimeType || '',
+                  size: file.size || 0,
+                  createdAt: 0,
+                },
+              })
+            }
+            className="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2 pr-1 text-left"
+            title={`Preview ${file.name}`}
+          >
+            <FileText className="h-3 w-3 shrink-0 text-accent" />
+            <span className="max-w-[180px] truncate font-medium">{file.name}</span>
+            {file.size ? <span className="shrink-0 text-[9px] text-faint">{formatSize(file.size)}</span> : null}
+          </button>
+          <button
+            type="button"
+            onClick={() => void api.downloadChatFile(file)}
+            className="mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-faint hover:bg-panel hover:text-accent"
+            aria-label={`Download ${file.name}`}
+            title="Download"
+          >
+            <Download className="h-2.5 w-2.5" />
+          </button>
+        </span>
       ))}
     </div>
   )

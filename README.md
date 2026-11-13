@@ -12,6 +12,7 @@ A local-first, project-first workspace for orchestrating **local agent harnesses
 - **Agent reports** — whenever a delegated task finishes, the agent's name and result appear as a message in the originating chat, even while you are elsewhere.
 - **Live working indicators** — the Orchestrator and agents pulse with a working state and the task they are running.
 - **File attachments** — attach or drag files into any Orchestrator or agent chat. Text files are read into the prompt; every file is downloadable from the message.
+- **Side file previews** — click any attachment or workspace file to open a side panel. PDFs use the browser viewer, images render inline, XLSX/CSV sheets show as tables, DOCX shows formatted content, and text/code is displayed directly. A project file browser lists files agents created in the workspace.
 - **Per-project workspace folders** — every project requires a workspace folder for its uploaded files, memory notes and embeddings. No implicit default is created.
 - **Message queue per chat** — keep sending while an agent works. Messages are stored server-side and sent in order when the current run finishes. Different chats still run in parallel.
 - **Shared memory in the inspector** — open the Memory tab on the right, drag between agents to link their memory, and review recent notes without leaving the chat.
@@ -105,6 +106,21 @@ Every Orchestrator and agent chat accepts files:
 - send attaches them to the message, where they can be downloaded again
 - text-like files (code, markdown, JSON, CSV, logs and similar) are injected into the prompt with a size budget; binaries appear as a file manifest with their workspace path
 - deleting a chat or file removes the database row and the workspace copy
+
+## File previews
+
+Open the right-hand file panel from the folder icon in the chat header, the **Files** button on the home screen, or by clicking an attachment in a message. The panel shows the current chat's uploads plus files in the project workspace, newest first, with a filter.
+
+| Type | Preview |
+| --- | --- |
+| PDF | Browser PDF viewer |
+| Images | Inline image |
+| XLSX, XLSM, CSV, TSV | Sheet tabs and scrollable tables |
+| DOCX | Formatted document content |
+| Text, Markdown, JSON, code, logs | Monospace text |
+| Other / legacy `.doc` / `.xls` | Download prompt |
+
+Files created or edited by agents inside the project workspace appear in the **Workspace files** list. Harnesses run in the project workspace by default unless their own working directory is configured, so agent file edits show up here automatically. Previews are read-only and served from the local server; the download button saves the original file.
 
 ## Message queue
 
@@ -461,6 +477,8 @@ All endpoints are under `/api`; JSON in/out, SSE at `/api/events`.
 - `POST/GET/PATCH/DELETE /api/chats`, `POST /api/chats/:id/messages`
   - `PATCH /api/chats/:id` with `{"archived": true}` archives the chat and its descendants; `false` restores them.
 - `GET/POST /api/chats/:id/files` (multipart upload, max 25 MB × 8), `GET/DELETE /api/files/:id`
+- `GET /api/files/:id/preview`, `GET /api/files/:id?inline=1`
+- `GET /api/projects/:id/files`, `GET /api/projects/:id/preview?path=…`, `GET /api/projects/:id/file?path=…`
 - `DELETE /api/queue/:id` removes a queued message; `POST /api/chats/:id/messages` returns `{queued: true}` when the chat is busy
 - `POST /api/chats/:id/cancel`, `POST /api/runs/:id/cancel`
 - `PATCH /api/settings`

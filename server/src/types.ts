@@ -159,7 +159,17 @@ export interface ChatDetail {
   tasks: Task[]
   runs: Run[]
   files: ChatFile[]
+  queue: QueuedMessage[]
   orchestrationRunId: string
+}
+
+export interface QueuedMessage {
+  id: string
+  chatId: string
+  projectId: string
+  content: string
+  fileIds: string[]
+  createdAt: number
 }
 
 export interface AgentLink {

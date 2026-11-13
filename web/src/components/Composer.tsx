@@ -1,4 +1,4 @@
-import { ArrowUp, Command, FileText, Paperclip, Sparkles, Square, X } from 'lucide-react'
+import { ArrowUp, FileText, Paperclip, Sparkles, Square, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useAppStore } from '../store'
@@ -37,7 +37,8 @@ export function Composer() {
 
   const running = Boolean(chat && activeRuns.some((run) => run.chatId === chat.id && run.status === 'running'))
   const agent = agents.find((entry) => entry.id === chat?.agentId)
-  const canSend = Boolean((draft.trim() || pending.length) && !sending && !uploading && !running)
+  const canSend = Boolean((draft.trim() || pending.length) && !sending && !uploading)
+  const queued = useAppStore((state) => state.detail?.queue?.length || 0)
 
   useEffect(() => {
     const element = ref.current
@@ -104,7 +105,7 @@ export function Composer() {
 
   const submit = async () => {
     const text = draft.trim()
-    if (!chatId || running || sending || uploading) return
+    if (!chatId || sending || uploading) return
     if (!text && !pending.length) return
     const content = text || 'See the attached files.'
     const fileIds = pending.map((file) => file.id)
@@ -195,7 +196,7 @@ export function Composer() {
             rows={1}
             placeholder={
               running
-                ? 'Agents are working. You can queue your next message after this run finishes…'
+                ? 'Agents are working. Type your next message — it will be queued and sent when this run finishes…'
                 : chat.kind === 'agent'
                   ? 'Reply to this sub-agent or give it more context…'
                   : agent?.name === 'Orchestrator'
@@ -219,7 +220,7 @@ export function Composer() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploading || running}
+                disabled={uploading}
                 className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-panel2 hover:text-ink disabled:opacity-40"
                 aria-label="Attach files"
                 title={`Attach files to this chat · stored in the project workspace (max ${MAX_FILES})`}
@@ -249,25 +250,25 @@ export function Composer() {
                 type="button"
                 onClick={() => void stop()}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-danger/30 bg-danger/10 px-2.5 text-[11.5px] font-medium text-danger transition-colors hover:bg-danger/15"
-                title="Stop the current run"
+                title="Stop the current run and clear queued messages"
               >
                 <Square className="h-3 w-3 fill-current" />
                 Stop
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void submit()}
-                disabled={!canSend}
-                className={cn(
-                  'inline-flex h-8 w-8 items-center justify-center rounded-lg transition-all',
-                  canSend ? 'bg-accent text-accent-ink hover:brightness-110' : 'bg-panel2 text-faint',
-                )}
-                aria-label="Send message"
-              >
-                {sending ? <Spinner /> : <ArrowUp className="h-4 w-4" />}
-              </button>
-            )}
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={!canSend}
+              className={cn(
+                'inline-flex h-8 w-8 items-center justify-center rounded-lg transition-all',
+                canSend ? 'bg-accent text-accent-ink hover:brightness-110' : 'bg-panel2 text-faint',
+              )}
+              aria-label={running ? 'Queue message' : 'Send message'}
+              title={running ? 'Queue this message' : 'Send message'}
+            >
+              {sending ? <Spinner /> : <ArrowUp className="h-4 w-4" />}
+            </button>
           </div>
         </div>
 
@@ -276,16 +277,15 @@ export function Composer() {
             {running ? (
               <span className="inline-flex items-center gap-1.5 text-accent">
                 <span className="h-1.5 w-1.5 rounded-full bg-accent pulse-soft" />
-                Orchestration live — watch the panel for agent activity
+                {queued
+                  ? `${queued} queued — sends when this run finishes`
+                  : 'Orchestration live — type to queue your next message'}
               </span>
             ) : dragOver ? (
               <span className="text-accent">Drop files to attach them to this message</span>
             ) : (
               <span>Attach files or drop them here — agents can read the text inside.</span>
             )}
-          </span>
-          <span className="hidden items-center gap-1 text-[10px] text-faint sm:flex">
-            <Command className="h-2.5 w-2.5" /> multi-agent workspace
           </span>
         </div>
       </div>

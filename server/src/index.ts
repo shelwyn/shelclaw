@@ -7,7 +7,12 @@ import { config } from './config.js'
 import { closeDb, db } from './db.js'
 import { AppError } from './errors.js'
 import { registerRoutes } from './routes.js'
-import { ensureProjectOrchestrators, ensureProjectWorkspaces } from './store.js'
+import { orchestrator } from './orchestrator/engine.js'
+import {
+  ensureProjectOrchestrators,
+  ensureProjectWorkspaces,
+  listQueuedChatIds,
+} from './store.js'
 import { now } from './util.js'
 
 const app = Fastify({
@@ -104,6 +109,8 @@ try {
   console.log(`\n  OpenCodex  →  http://${host}:${config.port}`)
   console.log(`  Data       →  ${config.dataDir}`)
   if (!config.appToken) console.log('  Auth       →  open (set APP_TOKEN to lock down remote access)')
+  // Resume messages that were queued before the previous process stopped.
+  for (const chatId of listQueuedChatIds()) orchestrator.drainQueue(chatId)
 } catch (err) {
   app.log.error(err)
   process.exit(1)

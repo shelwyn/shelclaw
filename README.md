@@ -12,7 +12,8 @@ A local-first, project-first workspace for orchestrating **local agent harnesses
 - **Agent reports** — whenever a delegated task finishes, the agent's name and result appear as a message in the originating chat, even while you are elsewhere.
 - **Live working indicators** — the Orchestrator and agents pulse with a working state and the task they are running.
 - **File attachments** — attach or drag files into any Orchestrator or agent chat. Text files are read into the prompt; every file is downloadable from the message.
-- **Per-project workspace folders** — choose where a project keeps its uploaded files, memory notes and embeddings. Defaults to `DATA_DIR/workspaces/<project-id>`.
+- **Per-project workspace folders** — every project requires a workspace folder for its uploaded files, memory notes and embeddings. No implicit default is created.
+- **Message queue per chat** — keep sending while an agent works. Messages are stored server-side and sent in order when the current run finishes. Different chats still run in parallel.
 - **Shared memory in the inspector** — open the Memory tab on the right, drag between agents to link their memory, and review recent notes without leaving the chat.
 - **Delete chats** — remove a conversation (and its sub-agent chats and uploads) from the sidebar or the chat header.
 - **Local harnesses only** — OpenCode server/CLI, Claude Code CLI, Pi CLI, or any custom local command. No cloud LLM endpoints to configure.
@@ -45,7 +46,7 @@ npm run dev
 
 The SQLite database lives in `./data/opencodex.db` by default. Set `DATA_DIR` to move it. Harness connections, projects, agents, chats, reports and memory all persist across restarts.
 
-1. Click **New project** and give it a name, brief and optional **workspace folder**.
+1. Click **New project** and give it a name, brief and **required workspace folder**.
 2. Open **Settings → Connect Harness** and connect a harness.
 3. Create agents from the project sidebar.
 4. Click an agent to chat with it, or start a **New chat** with the project Orchestrator.
@@ -76,11 +77,11 @@ A project is the top-level container. It owns:
 - a **project brief** injected into the root agent's prompt
 - a **workspace folder** for uploaded files, memory notes and embeddings
 
-Switch projects from the list at the top of the sidebar. Deleting a project deletes its agents and chats; the confirmation dialog warns you. The auto-managed default workspace is removed too. Custom workspace folders are left on disk so you never lose files you pointed the app at.
+Switch projects from the list at the top of the sidebar. Deleting a project deletes its agents and chats; the confirmation dialog warns you. Workspace folders are never deleted automatically — they belong to you.
 
 ### Workspace folder
 
-Set the workspace folder when creating a project, or later in project settings (the pencil icon). Leave it blank to use `DATA_DIR/workspaces/<project-id>`.
+A workspace folder is **required** when creating a project and there is no implicit default. The server must be able to create and write to the path. You can change it later in project settings (the pencil icon) until files have been uploaded.
 
 ```
 <workspace>/
@@ -102,6 +103,16 @@ Every Orchestrator and agent chat accepts files:
 - send attaches them to the message, where they can be downloaded again
 - text-like files (code, markdown, JSON, CSV, logs and similar) are injected into the prompt with a size budget; binaries appear as a file manifest with their workspace path
 - deleting a chat or file removes the database row and the workspace copy
+
+## Message queue
+
+Each chat accepts messages while a run is active. Instead of rejecting the message, OpenCodex stores it in a per-chat queue:
+
+- queued messages appear as dashed bubbles in the conversation and can be removed individually
+- when the current run finishes, the next queued message starts automatically, in order
+- **Stop** cancels the active run and clears that chat's queue
+- the queue is persisted in SQLite and resumes after a server restart
+- separate chats are independent, so they can work in parallel
 
 ## Deleting chats
 
@@ -337,7 +348,7 @@ Everything lives in one SQLite database (WAL mode):
 
 Bare metal: `DATA_DIR/opencodex.db` (default `./data/opencodex.db`). Docker: the `opencodex-data` volume mounted at `/data`. Restarting the app or container does **not** clear it.
 
-Project workspaces live under `DATA_DIR/workspaces/<project-id>` by default, or in a custom folder you choose. The database is the source of truth; workspace files are the durable copies of uploads, memory notes and embedding indexes. Deleting the database does not delete custom workspace folders.
+Project workspaces are chosen per project and required at creation. The database is the source of truth; workspace files are the durable copies of uploads, memory notes and embedding indexes. Project deletion never deletes the workspace folder.
 
 The database file is not encrypted; protect it like any credential store. Use the backup commands in the Docker section or copy the SQLite file (plus `-wal`/`-shm` while running, or stop the app first). Back up custom workspace folders separately.
 
@@ -448,6 +459,7 @@ All endpoints are under `/api`; JSON in/out, SSE at `/api/events`.
 - `POST/GET/PATCH/DELETE /api/chats`, `POST /api/chats/:id/messages`
   - `PATCH /api/chats/:id` with `{"archived": true}` archives the chat and its descendants; `false` restores them.
 - `GET/POST /api/chats/:id/files` (multipart upload, max 25 MB × 8), `GET/DELETE /api/files/:id`
+- `DELETE /api/queue/:id` removes a queued message; `POST /api/chats/:id/messages` returns `{queued: true}` when the chat is busy
 - `POST /api/chats/:id/cancel`, `POST /api/runs/:id/cancel`
 - `PATCH /api/settings`
 

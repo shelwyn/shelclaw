@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { config } from './config.js'
 import { db } from './db.js'
 import { AppError } from './errors.js'
 import type {
@@ -17,6 +16,7 @@ import type {
   Project,
   Provider,
   ProviderKind,
+  QueuedMessage,
   Run,
   SafeProvider,
   Task,
@@ -232,10 +232,6 @@ export function deleteProvider(providerId: string): boolean {
 
 /* --------------------------------- workspaces --------------------------------- */
 
-export function defaultWorkspacePath(projectId: string): string {
-  return path.join(config.workspacesDir, projectId)
-}
-
 export function ensureWorkspaceLayout(root: string): void {
   const absolute = path.resolve(root)
   for (const folder of ['chats', 'agents', 'memory', 'memory/shared', 'embeddings']) {
@@ -243,10 +239,13 @@ export function ensureWorkspaceLayout(root: string): void {
   }
 }
 
-export function resolveWorkspacePath(input: string | undefined, projectId: string): string {
+export function resolveWorkspacePath(input: string | undefined): string {
   const trimmed = (input || '').trim()
-  const expanded = trimmed ? trimmed.replace(/^~(?=$|\/)/, os.homedir()) : ''
-  const root = expanded ? path.resolve(expanded) : defaultWorkspacePath(projectId)
+  if (!trimmed) {
+    throw new AppError('Workspace folder is required.', 400)
+  }
+  const expanded = trimmed.replace(/^~(?=$|\/)/, os.homedir())
+  const root = path.resolve(expanded)
   try {
     ensureWorkspaceLayout(root)
     fs.accessSync(root, fs.constants.W_OK)
@@ -263,23 +262,32 @@ export function ensureProjectWorkspaces(): void {
   const projects = db.prepare('SELECT * FROM projects').all() as Row[]
   for (const row of projects) {
     const project = mapProject(row)
-    let workspace = project.workspacePath
-    if (!workspace) {
-      workspace = defaultWorkspacePath(project.id)
-      db.prepare('UPDATE projects SET workspace_path = ? WHERE id = ?').run(workspace, project.id)
+    if (!project.workspacePath) {
+      console.warn(`Project ${project.name} has no workspace folder; set one in project settings.`)
+      continue
     }
     try {
-      ensureWorkspaceLayout(workspace)
+      ensureWorkspaceLayout(project.workspacePath)
     } catch (err) {
       console.warn(`Workspace folder unavailable for project ${project.name}:`, err)
     }
   }
 }
 
+function projectWorkspacePath(project: Project): string {
+  if (!project.workspacePath) {
+    throw new AppError(
+      'This project has no workspace folder. Set one in project settings before uploading files.',
+      400,
+    )
+  }
+  return project.workspacePath
+}
+
 export function chatUploadDir(projectId: string, chatId: string): string {
   const project = getProject(projectId)
   if (!project) throw new AppError('Project not found.', 404)
-  const root = project.workspacePath || defaultWorkspacePath(projectId)
+  const root = projectWorkspacePath(project)
   const dir = path.join(root, 'chats', chatId, 'uploads')
   fs.mkdirSync(dir, { recursive: true })
   return dir
@@ -288,7 +296,7 @@ export function chatUploadDir(projectId: string, chatId: string): string {
 export function agentMemoryDir(projectId: string, agentId: string): string {
   const project = getProject(projectId)
   if (!project) throw new AppError('Project not found.', 404)
-  const root = project.workspacePath || defaultWorkspacePath(projectId)
+  const root = projectWorkspacePath(project)
   const dir = path.join(root, 'memory', agentId)
   fs.mkdirSync(dir, { recursive: true })
   fs.mkdirSync(path.join(root, 'embeddings', agentId), { recursive: true })
@@ -309,7 +317,7 @@ export function getProject(projectId: string): Project | undefined {
 export function createProject(input: Partial<Project> & { name: string }): Project {
   const t = now()
   const projectId = input.id || id('proj')
-  const workspacePath = resolveWorkspacePath(input.workspacePath, projectId)
+  const workspacePath = resolveWorkspacePath(input.workspacePath)
   db.prepare(
     `INSERT INTO projects (id, name, description, system_prompt, workspace_path, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -332,8 +340,11 @@ export function updateProject(projectId: string, input: Partial<Project>): Proje
   if (!existing) return undefined
 
   let workspacePath = existing.workspacePath
-  const requested = (input.workspacePath || '').trim()
-  if (requested && requested !== existing.workspacePath) {
+  const requested = (input.workspacePath ?? existing.workspacePath ?? '').trim()
+  if (!requested) {
+    throw new AppError('Workspace folder is required.', 400)
+  }
+  if (requested !== existing.workspacePath) {
     const fileCount = db
       .prepare('SELECT COUNT(*) AS n FROM chat_files WHERE project_id = ?')
       .get(projectId) as { n: number }
@@ -343,9 +354,7 @@ export function updateProject(projectId: string, input: Partial<Project>): Proje
         400,
       )
     }
-    workspacePath = resolveWorkspacePath(requested, projectId)
-  } else if (!existing.workspacePath) {
-    workspacePath = resolveWorkspacePath('', projectId)
+    workspacePath = resolveWorkspacePath(requested)
   }
 
   const merged = { ...existing, ...input, workspacePath, updatedAt: now() }
@@ -372,15 +381,6 @@ export function deleteProject(projectId: string): boolean {
   db.prepare('DELETE FROM agent_memory WHERE project_id = ?').run(projectId)
   db.prepare('DELETE FROM agents WHERE project_id = ?').run(projectId)
   const res = db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
-
-  // Only remove the auto-managed workspace. Custom folders are left untouched.
-  if (project.workspacePath.startsWith(config.workspacesDir + path.sep)) {
-    try {
-      fs.rmSync(project.workspacePath, { recursive: true, force: true })
-    } catch {
-      // best effort
-    }
-  }
   return Number(res.changes) > 0
 }
 
@@ -683,9 +683,13 @@ export function deleteChat(chatId: string): boolean {
   }
   const remove = db.prepare('DELETE FROM chats WHERE id = ?')
   const removeTasks = db.prepare('DELETE FROM tasks WHERE chat_id = ? OR parent_chat_id = ?')
+  const removeQueue = db.prepare('DELETE FROM chat_queue WHERE chat_id = ?')
   db.exec('BEGIN')
   try {
-    for (const cid of all) removeTasks.run(cid, cid)
+    for (const cid of all) {
+      removeTasks.run(cid, cid)
+      removeQueue.run(cid)
+    }
     db.prepare('DELETE FROM tasks WHERE root_chat_id = ?').run(chatId)
     for (const cid of all.reverse()) remove.run(cid)
     db.exec('COMMIT')
@@ -1220,6 +1224,79 @@ export function deleteChatFile(fileId: string): boolean {
   return Number(res.changes) > 0
 }
 
+/* --------------------------------- chat queue --------------------------------- */
+
+function mapQueuedMessage(r: Row): QueuedMessage {
+  let fileIds: string[] = []
+  try {
+    const parsed = JSON.parse(s(r.file_ids) || '[]')
+    if (Array.isArray(parsed)) fileIds = parsed.map((value) => String(value))
+  } catch {
+    fileIds = []
+  }
+  return {
+    id: s(r.id),
+    chatId: s(r.chat_id),
+    projectId: s(r.project_id),
+    content: s(r.content),
+    fileIds,
+    createdAt: n(r.created_at),
+  }
+}
+
+export function enqueueMessage(input: {
+  chatId: string
+  projectId: string
+  content: string
+  fileIds?: string[]
+}): QueuedMessage {
+  const queueId = id('queue')
+  db.prepare(
+    'INSERT INTO chat_queue (id, project_id, chat_id, content, file_ids, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(
+    queueId,
+    input.projectId,
+    input.chatId,
+    input.content,
+    JSON.stringify(input.fileIds || []),
+    now(),
+  )
+  return mapQueuedMessage(db.prepare('SELECT * FROM chat_queue WHERE id = ?').get(queueId) as Row)
+}
+
+export function listQueuedMessages(chatId: string): QueuedMessage[] {
+  return (
+    db.prepare('SELECT * FROM chat_queue WHERE chat_id = ? ORDER BY created_at ASC').all(chatId) as Row[]
+  ).map(mapQueuedMessage)
+}
+
+export function shiftQueuedMessage(chatId: string): QueuedMessage | undefined {
+  const row = db
+    .prepare('SELECT * FROM chat_queue WHERE chat_id = ? ORDER BY created_at ASC LIMIT 1')
+    .get(chatId) as Row | undefined
+  if (!row) return undefined
+  db.prepare('DELETE FROM chat_queue WHERE id = ?').run(s(row.id))
+  return mapQueuedMessage(row)
+}
+
+export function removeQueuedMessage(queueId: string): QueuedMessage | undefined {
+  const row = db.prepare('SELECT * FROM chat_queue WHERE id = ?').get(queueId) as Row | undefined
+  if (!row) return undefined
+  db.prepare('DELETE FROM chat_queue WHERE id = ?').run(queueId)
+  return mapQueuedMessage(row)
+}
+
+export function clearQueuedMessages(chatId: string): number {
+  const res = db.prepare('DELETE FROM chat_queue WHERE chat_id = ?').run(chatId)
+  return Number(res.changes)
+}
+
+export function listQueuedChatIds(): string[] {
+  return (
+    db.prepare('SELECT DISTINCT chat_id FROM chat_queue ORDER BY chat_id').all() as Row[]
+  ).map((row) => s(row.chat_id))
+}
+
 /* --------------------------------- chat detail -------------------------------- */
 
 export function getChatDetail(chatId: string): ChatDetail | undefined {
@@ -1234,6 +1311,7 @@ export function getChatDetail(chatId: string): ChatDetail | undefined {
     tasks: listTasksForRootChat(rootChatId),
     runs: listRuns(chatId),
     files: listChatFiles(chatId),
+    queue: listQueuedMessages(chatId),
     orchestrationRunId: latestRootRun?.id || '',
   } as ChatDetail
 }

@@ -157,6 +157,15 @@ CREATE TABLE IF NOT EXISTS chat_files (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS chat_queue (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL DEFAULT '',
+  chat_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  file_ids TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_chats_parent ON chats(parent_chat_id);
 CREATE INDEX IF NOT EXISTS idx_chats_project ON chats(project_id, last_message_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chats_updated ON chats(last_message_at DESC);
@@ -168,6 +177,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_links_project ON agent_links(project_id);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_agent ON agent_memory(agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_project ON agent_memory(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_files_chat ON chat_files(chat_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_queue_chat ON chat_queue(chat_id, created_at);
 `)
 
 // Lightweight migrations for databases created by earlier releases.

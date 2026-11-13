@@ -19,7 +19,6 @@ export const config = {
   appToken: (process.env.APP_TOKEN || '').trim(),
   dataDir,
   dbPath: path.join(dataDir, 'opencodex.db'),
-  workspacesDir: path.join(dataDir, 'workspaces'),
   webDist: path.join(projectRoot, 'web', 'dist'),
   projectRoot,
   isProd: process.env.NODE_ENV === 'production' || !process.env.TSX_DEV,

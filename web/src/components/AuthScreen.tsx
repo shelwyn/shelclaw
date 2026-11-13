@@ -1,4 +1,4 @@
-import { ArrowRight, KeyRound, Lock, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, KeyRound, Lock, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { useAppStore } from '../store'
 import { Button, Input } from './ui'
@@ -41,7 +41,6 @@ export function AuthScreen() {
           </div>
           <div>
             <div className="text-[17px] font-semibold tracking-[-0.02em] text-ink">OpenCodex</div>
-            <div className="text-[10.5px] text-faint">multi-agent workspace</div>
           </div>
         </div>
 
@@ -92,11 +91,6 @@ export function AuthScreen() {
               Tokens are stored in this browser only. Provider keys never leave your server.
             </span>
           </div>
-        </div>
-
-        <div className="mt-4 flex items-center justify-center gap-1.5 text-[10px] text-faint">
-          <Sparkles className="h-3 w-3" />
-          Parallel agents · per-agent models · recursive delegation
         </div>
       </div>
     </div>

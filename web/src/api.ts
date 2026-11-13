@@ -7,6 +7,7 @@ import type {
   MemoryGraph,
   Project,
   Provider,
+  QueuedMessage,
   Run,
 } from './types'
 
@@ -84,9 +85,16 @@ export const api = {
   sendMessage: (
     id: string,
     body: { content: string; agentId?: string; providerId?: string; model?: string; fileIds?: string[] },
-  ) => request<{ run: Run; chatId: string }>(`/api/chats/${id}/messages`, { method: 'POST', ...json(body) }),
-  cancelChat: (id: string) => request<{ ok: boolean }>(`/api/chats/${id}/cancel`, { method: 'POST' }),
+  ) =>
+    request<{ run?: Run; queued?: boolean; item?: QueuedMessage; chatId: string }>(
+      `/api/chats/${id}/messages`,
+      { method: 'POST', ...json(body) },
+    ),
+  cancelChat: (id: string) =>
+    request<{ ok: boolean; cleared: number }>(`/api/chats/${id}/cancel`, { method: 'POST' }),
   cancelRun: (id: string) => request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: 'POST' }),
+  removeQueuedMessage: (id: string) =>
+    request<{ ok: boolean; chatId: string }>(`/api/queue/${id}`, { method: 'DELETE' }),
 
   uploadChatFile: (chatId: string, file: File) => {
     const form = new FormData()

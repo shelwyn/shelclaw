@@ -107,6 +107,7 @@ interface AppState {
   openAgentChat: (agentId: string) => Promise<string | null>
   deleteChat: (id: string) => Promise<void>
   send: (content: string, fileIds?: string[]) => Promise<boolean>
+  removeQueuedMessage: (id: string) => Promise<void>
   stop: () => Promise<void>
   updateChat: (patch: Partial<Chat>) => Promise<void>
   selectAgent: (agentId: string) => Promise<void>
@@ -137,6 +138,7 @@ const emptyDetail = (chat: Chat): ChatDetail => ({
   tasks: [],
   runs: [],
   files: [],
+  queue: [],
   orchestrationRunId: '',
   activeRunId: '',
 })
@@ -320,6 +322,14 @@ function handleEvent(event: BusEvent): void {
     case 'chats.changed':
       scheduleRefresh(250)
       break
+
+    case 'queue.changed': {
+      const chatId = String(event.chatId || '')
+      if (chatId && state.activeChatId === chatId) {
+        void useAppStore.getState().refreshDetail(chatId)
+      }
+      break
+    }
 
     case 'settings.changed':
       void state.refresh()
@@ -674,13 +684,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!chatId) return false
     const chat = state.detail?.chat || state.chats.find((entry) => entry.id === chatId)
     if (!chat) return false
-    if (state.activeRuns.some((run) => run.chatId === chatId)) {
-      pushToast('info', 'This chat is still running. Stop it before sending another message.')
-      return false
-    }
+    const alreadyRunning = state.activeRuns.some((run) => run.chatId === chatId)
     set({ sending: true })
     try {
-      await api.sendMessage(chatId, {
+      const result = await api.sendMessage(chatId, {
         content,
         agentId: chat.agentId,
         providerId: chat.providerId,
@@ -688,12 +695,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         fileIds: fileIds?.length ? fileIds : undefined,
       })
       set((current) => ({ drafts: { ...current.drafts, [chatId]: '' } }))
+      if (result.queued) {
+        pushToast('info', 'Message queued. It will send when this run finishes.')
+        void get().refreshDetail(chatId)
+      }
       return true
     } catch (err) {
       pushToast('error', errorText(err))
+      if (alreadyRunning) void get().refreshDetail(chatId)
       return false
     } finally {
       set({ sending: false })
+    }
+  },
+
+  removeQueuedMessage: async (id: string) => {
+    set((state) =>
+      state.detail
+        ? { detail: { ...state.detail, queue: state.detail.queue.filter((item) => item.id !== id) } }
+        : {},
+    )
+    try {
+      const result = await api.removeQueuedMessage(id)
+      if (get().activeChatId === result.chatId) void get().refreshDetail(result.chatId)
+    } catch (err) {
+      pushToast('error', errorText(err))
+      const chatId = get().activeChatId
+      if (chatId) void get().refreshDetail(chatId)
     }
   },
 
@@ -701,7 +729,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const chatId = get().activeChatId
     if (!chatId) return
     try {
-      await api.cancelChat(chatId)
+      const result = await api.cancelChat(chatId)
+      if (result.cleared) pushToast('info', 'Stopped. Queued messages were cleared.')
+      void get().refreshDetail(chatId)
     } catch (err) {
       pushToast('error', errorText(err))
     }

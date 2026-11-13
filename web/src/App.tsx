@@ -78,7 +78,7 @@ export default function App() {
   useEffect(() => {
     document.title = chatTitle
       ? `${chatTitle} · ${workspaceName || 'OpenCodex'}`
-      : `${workspaceName || 'OpenCodex'} — multi-agent workspace`
+      : `${workspaceName || 'OpenCodex'}`
   }, [chatTitle, workspaceName])
 
   useEffect(() => {

@@ -24,6 +24,7 @@ import {
   deleteChatFile,
   deleteProject,
   deleteProvider,
+  enqueueMessage,
   ensureProjectOrchestrator,
   getAgent,
   getChat,
@@ -34,6 +35,7 @@ import {
   getOrchestrator,
   getProject,
   getProvider,
+  getRun,
   getSettings,
   insertChatFile,
   listAgents,
@@ -41,8 +43,10 @@ import {
   listChats,
   listProjects,
   listSafeProviders,
+  removeQueuedMessage,
   safeProvider,
   setChatArchived,
+  clearQueuedMessages,
   updateAgent,
   updateChat,
   updateProject,
@@ -305,6 +309,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/projects', async (req) => {
     const input = parse(projectInput, req.body)
     if (!input.name) throw new AppError('name is required', 400)
+    if (!input.workspacePath?.trim()) throw new AppError('Workspace folder is required.', 400)
     return createProject({ ...input, name: input.name })
   })
 
@@ -531,17 +536,54 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }),
       req.body,
     )
-    const run = await orchestrator.startChat(id, body.content, body)
+    const chat = getChat(id)
+    if (!chat) throw new AppError('Chat not found.', 404)
+    const content = body.content.trim()
+    if (!content) throw new AppError('Message cannot be empty.', 400)
+    const fileIds = (body.fileIds || []).filter((fileId) => getChatFile(fileId)?.chatId === id)
+
+    if (orchestrator.isRunning(id)) {
+      const item = enqueueMessage({
+        chatId: id,
+        projectId: chat.projectId,
+        content,
+        fileIds,
+      })
+      bus.emit('queue.changed', { chatId: id })
+      return { queued: true, item, chatId: id }
+    }
+
+    const run = await orchestrator.startChat(id, content, {
+      agentId: body.agentId,
+      providerId: body.providerId,
+      model: body.model,
+      fileIds,
+    })
     return { run, chatId: id }
+  })
+
+  app.delete('/api/queue/:id', async (req) => {
+    const { id } = req.params as { id: string }
+    const item = removeQueuedMessage(id)
+    if (!item) throw new AppError('Queued message not found.', 404)
+    bus.emit('queue.changed', { chatId: item.chatId })
+    return { ok: true, chatId: item.chatId }
   })
 
   app.post('/api/chats/:id/cancel', async (req) => {
     const { id } = req.params as { id: string }
-    return { ok: orchestrator.cancelChat(id) }
+    const cleared = clearQueuedMessages(id)
+    if (cleared) bus.emit('queue.changed', { chatId: id })
+    return { ok: orchestrator.cancelChat(id), cleared }
   })
 
   app.post('/api/runs/:id/cancel', async (req) => {
     const { id } = req.params as { id: string }
+    const run = getRun(id)
+    if (run && !run.parentRunId) {
+      const cleared = clearQueuedMessages(run.chatId)
+      if (cleared) bus.emit('queue.changed', { chatId: run.chatId })
+    }
     return { ok: orchestrator.cancelRun(id) }
   })
 

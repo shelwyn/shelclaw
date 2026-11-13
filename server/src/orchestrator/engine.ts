@@ -26,6 +26,7 @@ import {
   listMessages,
   listProjectAgents,
   listProviders,
+  shiftQueuedMessage,
   updateChat,
   updateMessage,
   updateRun,
@@ -494,7 +495,7 @@ export class Orchestrator {
   }
 
   private async executeRoot(ctx: RunContext): Promise<void> {
-    const { run, chat } = ctx
+const { run, chat } = ctx
     try {
       const result = await this.runLoop(ctx)
       updateRun(run.id, {
@@ -522,7 +523,22 @@ export class Orchestrator {
       this.cleanupRun(run.id, chat.id)
       this.agentCounts.delete(run.id)
       this.emitRunState(run.id, chat.id)
+      if (!ctx.signal.aborted) this.drainQueue(chat.id)
     }
+  }
+
+  drainQueue(chatId: string): void {
+    if (this.chatRuns.has(chatId)) return
+    const next = shiftQueuedMessage(chatId)
+    if (!next) return
+    bus.emit('queue.changed', { chatId })
+    setTimeout(() => {
+      void this.startChat(chatId, next.content, { fileIds: next.fileIds }).catch((err) => {
+        const message = err instanceof Error ? err.message : String(err)
+        bus.emit('toast', { level: 'error', message: `Queued message could not start: ${message}` })
+        this.drainQueue(chatId)
+      })
+    }, 0)
   }
 
   private cleanupRun(runId: string, chatId: string): void {

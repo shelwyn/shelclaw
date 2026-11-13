@@ -48,11 +48,16 @@ export function ProjectModal({ projectId }: { projectId?: string }) {
       toast('error', 'Give the project a name.')
       return
     }
+    if (!form.workspacePath.trim()) {
+      toast('error', 'Choose a workspace folder for this project.')
+      return
+    }
     setSaving(true)
     try {
+      const payload = { ...form, workspacePath: form.workspacePath.trim() }
       const project = existing
-        ? await api.updateProject(existing.id, form)
-        : await api.createProject(form as Partial<Project>)
+        ? await api.updateProject(existing.id, payload)
+        : await api.createProject(payload as Partial<Project>)
       await refresh()
       if (!existing) setActiveProject(project.id)
       toast('success', existing ? 'Project updated.' : 'Project created.')
@@ -174,18 +179,19 @@ export function ProjectModal({ projectId }: { projectId?: string }) {
         </Field>
 
         <Field
-          label="Workspace folder"
+          label="Workspace folder (required)"
           hint={
             existing
               ? 'Uploaded files, memory notes, and embeddings live here. The folder cannot be moved after files are uploaded.'
-              : 'Optional. Leave blank to use the app data folder. Uploaded files, memory notes, and embeddings will live here.'
+              : 'Required. The server must be able to create and write to this folder. Uploaded files, memory notes, and embeddings will live here.'
           }
         >
           <Input
             value={form.workspacePath}
             onChange={(event) => update('workspacePath', event.target.value)}
-            placeholder={existing?.workspacePath || '~/.opencodex/workspaces/<project-id>'}
+            placeholder="Absolute path, e.g. /Users/you/code/my-project"
             spellCheck={false}
+            required
             className="font-mono text-[11.5px]"
           />
         </Field>

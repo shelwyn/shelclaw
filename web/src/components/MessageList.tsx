@@ -322,6 +322,9 @@ function MessageAttachments({ metadata }: { metadata: Record<string, unknown> })
 export function MessageList() {
   const chat = useAppStore((state) => state.detail?.chat || null)
   const allMessages = useAppStore((state) => state.detail?.messages)
+  const queue = useAppStore((state) => state.detail?.queue) || []
+  const files = useAppStore((state) => state.detail?.files) || []
+  const removeQueuedMessage = useAppStore((state) => state.removeQueuedMessage)
   const agents = useAppStore((state) => state.agents)
   const runTasks = useAppStore((state) => state.detail?.tasks) || []
   const providerCount = useAppStore((state) => state.providers.length)
@@ -464,6 +467,39 @@ export function MessageList() {
               />
             ),
           )}
+          {queue.map((item) => {
+            const names = item.fileIds
+              .map((fileId) => files.find((file) => file.id === fileId)?.name)
+              .filter(Boolean)
+            return (
+              <div key={item.id} className="fade-up flex justify-end">
+                <div className="max-w-[86%] rounded-2xl rounded-br-md border border-dashed border-accent/30 bg-panel2/60 px-4 py-2.5 text-[13px] leading-relaxed text-muted">
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <Clock className="h-3 w-3 text-accent" />
+                    <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-accent">
+                      queued
+                    </span>
+                    <span className="flex-1" />
+                    <button
+                      type="button"
+                      onClick={() => void removeQueuedMessage(item.id)}
+                      className="inline-flex h-4 w-4 items-center justify-center rounded text-faint hover:bg-panel hover:text-danger"
+                      aria-label="Remove queued message"
+                      title="Remove from queue"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </div>
+                  <div className="whitespace-pre-wrap">{item.content}</div>
+                  {names.length ? (
+                    <div className="mt-1 truncate text-[10px] text-faint">
+                      {names.join(' · ')}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )
+          })}
           {running && messages[messages.length - 1]?.role === 'user' ? (
             <div className="flex gap-3">
               <Avatar name={agent?.name || 'Agent'} color={agent?.color} size="md" />

@@ -473,7 +473,6 @@ export function Sidebar() {
             <div className="truncate text-[13.5px] font-semibold tracking-[-0.01em] text-ink">
               {settings.workspaceName || 'OpenCodex'}
             </div>
-            <div className="text-[10px] text-faint">project-first agent workspace</div>
           </div>
           <button
             type="button"

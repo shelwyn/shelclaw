@@ -1,4 +1,4 @@
-import { FolderKanban, FolderOpen, Plus, Settings2 } from 'lucide-react'
+import { FolderKanban, FolderOpen, Package, Plus, Settings2 } from 'lucide-react'
 import { useAppStore } from '../store'
 import { fmtTokens } from '../lib/format'
 import { ChatHeader } from './ChatHeader'
@@ -103,6 +103,7 @@ function Hero() {
   const newChat = useAppStore((state) => state.newChat)
   const openModal = useAppStore((state) => state.openModal)
   const openFilesPanel = useAppStore((state) => state.openFilesPanel)
+  const openArtifactsPanel = useAppStore((state) => state.openArtifactsPanel)
 
   const project = projects.find((entry) => entry.id === activeProjectId)
 
@@ -159,6 +160,12 @@ function Hero() {
             <Button variant="outline" size="md" onClick={openFilesPanel}>
               <FolderOpen className="h-4 w-4" />
               Files
+            </Button>
+          ) : null}
+          {project ? (
+            <Button variant="outline" size="md" onClick={() => openArtifactsPanel()}>
+              <Package className="h-4 w-4" />
+              Artifacts
             </Button>
           ) : null}
         </div>

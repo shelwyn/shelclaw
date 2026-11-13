@@ -12,6 +12,7 @@ import {
   Network,
   Pencil,
   Plus,
+  Package,
   Settings2,
   X,
 } from 'lucide-react'
@@ -19,6 +20,7 @@ import { useEffect, useState } from 'react'
 import { useAppStore } from '../store'
 import type { Agent, Task } from '../types'
 import { duration, fmtTokens, modelShort, plural } from '../lib/format'
+import { ArtifactsPanel } from './ArtifactsPanel'
 import { MemoryPanel } from './MemoryPanel'
 import { Avatar, Badge, Button, cn, EmptyState, Spinner } from './ui'
 
@@ -236,20 +238,32 @@ export function Inspector() {
       <aside className="fixed inset-y-0 right-0 z-40 flex w-[332px] max-w-[85vw] shrink-0 flex-col border-l border-line bg-panel shadow-[-12px_0_40px_-20px_rgba(0,0,0,0.3)] xl:static xl:z-auto xl:shadow-none">
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-3.5">
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/10 text-accent">
-            {inspectorTab === 'memory' ? <Brain className="h-3.5 w-3.5" /> : <Network className="h-3.5 w-3.5" />}
+            {inspectorTab === 'memory' ? (
+              <Brain className="h-3.5 w-3.5" />
+            ) : inspectorTab === 'artifacts' ? (
+              <Package className="h-3.5 w-3.5" />
+            ) : (
+              <Network className="h-3.5 w-3.5" />
+            )}
           </span>
           <div className="min-w-0 flex-1">
             <div className="text-[12.5px] font-semibold text-ink">
-              {inspectorTab === 'memory' ? 'Agent memory' : 'Orchestration'}
+              {inspectorTab === 'memory'
+                ? 'Agent memory'
+                : inspectorTab === 'artifacts'
+                  ? 'Artifacts'
+                  : 'Orchestration'}
             </div>
             <div className="text-[9.5px] text-faint">
               {inspectorTab === 'memory'
                 ? 'drag to link · click × to unlink'
-                : isRunning
-                  ? `live · ${running.length} active`
-                  : tasks.length
-                    ? 'latest run'
-                    : 'no delegated tasks'}
+                : inspectorTab === 'artifacts'
+                  ? 'uploads and agent-created files'
+                  : isRunning
+                    ? `live · ${running.length} active`
+                    : tasks.length
+                      ? 'latest run'
+                      : 'no delegated tasks'}
             </div>
           </div>
           <button
@@ -275,29 +289,44 @@ export function Inspector() {
             type="button"
             onClick={() => setInspectorTab('orchestration')}
             className={cn(
-              'flex flex-1 items-center justify-center gap-1.5 rounded-md py-1 text-[10.5px] font-medium transition-colors',
+              'flex flex-1 items-center justify-center gap-1 rounded-md py-1 text-[10px] font-medium transition-colors',
               inspectorTab === 'orchestration'
                 ? 'bg-panel2 text-ink'
                 : 'text-muted hover:text-ink',
             )}
+            title="Orchestration"
           >
-            <Network className="h-3 w-3" /> Orchestration
+            <Network className="h-3 w-3" /> Run
           </button>
           <button
             type="button"
             onClick={() => setInspectorTab('memory')}
             className={cn(
-              'flex flex-1 items-center justify-center gap-1.5 rounded-md py-1 text-[10.5px] font-medium transition-colors',
+              'flex flex-1 items-center justify-center gap-1 rounded-md py-1 text-[10px] font-medium transition-colors',
               inspectorTab === 'memory' ? 'bg-panel2 text-ink' : 'text-muted hover:text-ink',
             )}
+            title="Memory links"
           >
             <Brain className="h-3 w-3" /> Memory
+          </button>
+          <button
+            type="button"
+            onClick={() => setInspectorTab('artifacts')}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1 rounded-md py-1 text-[10px] font-medium transition-colors',
+              inspectorTab === 'artifacts' ? 'bg-panel2 text-ink' : 'text-muted hover:text-ink',
+            )}
+            title="Project artifacts"
+          >
+            <Package className="h-3 w-3" /> Files
           </button>
         </div>
 
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 py-3">
           {inspectorTab === 'memory' ? (
             <MemoryPanel />
+          ) : inspectorTab === 'artifacts' ? (
+            <ArtifactsPanel />
           ) : !chat ? (
             <EmptyState
               icon={<Network className="h-4 w-4" />}
@@ -480,7 +509,9 @@ export function Inspector() {
         <div className="shrink-0 border-t border-line px-3.5 py-2 text-[9.5px] leading-relaxed text-faint">
           {inspectorTab === 'memory'
             ? 'Memory notes and links live inside the project workspace. Linked agents see each other’s notes in their prompts.'
-            : 'Sub-agents are isolated: each gets only the brief the parent wrote, its own model, and its own chat you can inspect.'}
+            : inspectorTab === 'artifacts'
+              ? 'Uploads and files agents created or edited in the project workspace. Click one to preview it.'
+              : 'Sub-agents are isolated: each gets only the brief the parent wrote, its own model, and its own chat you can inspect.'}
         </div>
       </aside>
     </>

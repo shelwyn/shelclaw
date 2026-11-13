@@ -24,7 +24,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store'
 import type { Agent, Chat, Provider } from '../types'
-import { modelShort, isHarnessKind } from '../lib/format'
+import { modelShort, isHarnessKind, fmtTokens, fmtCost } from '../lib/format'
 import { Avatar, Badge, Button, cn, ConfirmDialog, MenuItem, Popover, Spinner } from './ui'
 
 function AgentPicker({ chat, agent }: { chat: Chat; agent?: Agent }) {
@@ -256,6 +256,8 @@ export function ChatHeader() {
   const toggleTheme = useAppStore((state) => state.toggleTheme)
   const theme = useAppStore((state) => state.theme)
   const chat = useAppStore((state) => state.detail?.chat || null)
+  const usage = useAppStore((state) => state.detail?.usage)
+  const context = useAppStore((state) => state.detail?.context)
   const activeTasks = useAppStore((state) =>
     state.detail
       ? state.detail.tasks.filter((task) => task.status === 'running' || task.status === 'queued').length
@@ -378,6 +380,21 @@ export function ChatHeader() {
             <Square className="h-3 w-3 fill-current" />
             Stop
           </Button>
+        ) : null}
+
+        {usage && context ? (
+          <div
+            className="hidden items-center gap-1.5 rounded-lg border border-line bg-panel px-2 py-1 text-[10px] tabular-nums text-muted lg:flex"
+            title={`${context.usedTokens.toLocaleString()} of ${context.limitTokens.toLocaleString()} context tokens used`}
+          >
+            <span>{fmtTokens(usage.total)} tok</span>
+            <span className="text-faint">·</span>
+            <span className={context.percent >= 80 ? 'font-medium text-warn' : ''}>
+              {context.percent}% ctx
+            </span>
+            <span className="text-faint">·</span>
+            <span>{fmtCost(usage.cost)}</span>
+          </div>
         ) : null}
 
         <button

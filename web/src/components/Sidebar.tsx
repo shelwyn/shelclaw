@@ -8,6 +8,7 @@ import {
   FolderKanban,
   MessageSquare,
   Moon,
+  Package,
   Pencil,
   Plus,
   Search,
@@ -19,8 +20,8 @@ import {
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../store'
-import type { Agent, Chat, Project } from '../types'
-import { relativeTime } from '../lib/format'
+import type { Agent, Chat, Project, UsageTotals } from '../types'
+import { relativeTime, fmtTokens, fmtCost } from '../lib/format'
 import { Avatar, Badge, Button, cn, ConfirmDialog, EmptyState, Spinner } from './ui'
 
 function ChatRow({
@@ -28,6 +29,7 @@ function ChatRow({
   depth,
   agent,
   active,
+  unread,
   onClick,
   onDelete,
 }: {
@@ -35,6 +37,7 @@ function ChatRow({
   depth: number
   agent?: Agent
   active: boolean
+  unread: boolean
   onClick: () => void
   onDelete: () => void
 }) {
@@ -64,6 +67,13 @@ function ChatRow({
           />
         )}
         <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{chat.title}</span>
+        {unread ? (
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+            title="New activity"
+            aria-label="Unread"
+          />
+        ) : null}
         <span className="shrink-0 text-[10px] tabular-nums text-faint">
           {running ? 'live' : relativeTime(chat.lastMessageAt)}
         </span>
@@ -90,6 +100,7 @@ function ChatBranch({
   childrenByParent,
   agentMap,
   activeChatId,
+  unreadChatIds,
   expanded,
   setExpanded,
   openChat,
@@ -100,6 +111,7 @@ function ChatBranch({
   childrenByParent: Map<string, Chat[]>
   agentMap: Map<string, Agent>
   activeChatId: string
+  unreadChatIds: string[]
   expanded: Record<string, boolean>
   setExpanded: Dispatch<SetStateAction<Record<string, boolean>>>
   openChat: (id: string) => void
@@ -116,6 +128,7 @@ function ChatBranch({
         depth={depth}
         agent={agentMap.get(chat.agentId)}
         active={chat.id === activeChatId}
+        unread={unreadChatIds.includes(chat.id)}
         onClick={() => openChat(chat.id)}
         onDelete={() => onDelete(chat)}
       />
@@ -129,6 +142,7 @@ function ChatBranch({
               childrenByParent={childrenByParent}
               agentMap={agentMap}
               activeChatId={activeChatId}
+              unreadChatIds={unreadChatIds}
               expanded={expanded}
               setExpanded={setExpanded}
               openChat={openChat}
@@ -170,8 +184,10 @@ function ProjectRow({
   onSelect,
   onEdit,
   onMemory,
+  onArtifacts,
   onDelete,
   memoryActive,
+  unread,
 }: {
   project: Project
   active: boolean
@@ -180,8 +196,10 @@ function ProjectRow({
   onSelect: () => void
   onEdit: () => void
   onMemory: () => void
+  onArtifacts: () => void
   onDelete: () => void
   memoryActive: boolean
+  unread: boolean
 }) {
   return (
     <div
@@ -207,6 +225,13 @@ function ProjectRow({
           style={{ backgroundColor: project.color || 'var(--accent)' }}
         />
         <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{project.name}</span>
+        {unread ? (
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+            title="Unread agent activity"
+            aria-label="Unread activity"
+          />
+        ) : null}
         {!active && chatCount ? (
           <span className="shrink-0 text-[9.5px] tabular-nums text-faint">
             {agentCount}a · {chatCount}c
@@ -236,6 +261,15 @@ function ProjectRow({
           >
             <Brain className="h-3.5 w-3.5" />
           </button>
+          <button
+            type="button"
+            onClick={onArtifacts}
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
+            aria-label="Project artifacts"
+            title="Project artifacts"
+          >
+            <Package className="h-3.5 w-3.5" />
+          </button>
         </div>
       ) : null}
       <button
@@ -258,12 +292,16 @@ function AgentRow({
   agent,
   busyTitle,
   activeChatId,
+  unread,
+  usage,
   onOpen,
   onEdit,
 }: {
   agent: Agent
   busyTitle?: string
   activeChatId: string
+  unread: boolean
+  usage?: UsageTotals
   onOpen: () => void
   onEdit: () => void
 }) {
@@ -292,6 +330,13 @@ function AgentRow({
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className="truncate text-[12.5px] font-medium text-ink">{agent.name}</span>
+            {unread ? (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+                title="Finished — open to view"
+                aria-label="Unread"
+              />
+            ) : null}
             {agent.canSpawn ? <Badge tone="accent">delegates</Badge> : null}
           </span>
           <span
@@ -300,7 +345,15 @@ function AgentRow({
               busy ? 'text-accent' : 'text-faint',
             )}
           >
-            {busy ? `working on ${busyTitle}` : agent.model || 'harness default'}
+            {busy
+              ? `working on ${busyTitle}`
+              : [
+                  agent.model || 'harness default',
+                  usage ? `${fmtTokens(usage.total)} tok` : '',
+                  usage?.cost ? fmtCost(usage.cost) : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
           </span>
         </span>
       </button>
@@ -327,6 +380,7 @@ export function Sidebar() {
     activeProjectId,
     inspectorTab,
     inspectorOpen,
+    unreadChatIds,
     search,
     archivedView,
     sidebarOpen,
@@ -341,10 +395,12 @@ export function Sidebar() {
     newChat,
     openMemory,
     openModal,
+    openArtifactsPanel,
     toggleTheme,
     goHome,
     deleteChat,
     deleteProject,
+    clearUnreadForAgent,
   } = useAppStore(
     useShallow((state) => ({
       agents: state.agents,
@@ -355,6 +411,7 @@ export function Sidebar() {
       activeProjectId: state.activeProjectId,
       inspectorTab: state.inspectorTab,
       inspectorOpen: state.inspectorOpen,
+      unreadChatIds: state.unreadChatIds,
       search: state.search,
       archivedView: state.archivedView,
       sidebarOpen: state.sidebarOpen,
@@ -369,10 +426,12 @@ export function Sidebar() {
       newChat: state.newChat,
       openMemory: state.openMemory,
       openModal: state.openModal,
+      openArtifactsPanel: state.openArtifactsPanel,
       toggleTheme: state.toggleTheme,
       goHome: state.goHome,
       deleteChat: state.deleteChat,
       deleteProject: state.deleteProject,
+      clearUnreadForAgent: state.clearUnreadForAgent,
     })),
   )
 
@@ -441,8 +500,21 @@ export function Sidebar() {
     )
   })
   const archivedCount = projectChats.filter((chat) => chat.archivedAt).length
+  const unreadSet = useMemo(() => new Set(unreadChatIds), [unreadChatIds])
+  const agentUnread = (agentId: string) =>
+    chats.some((chat) => chat.agentId === agentId && unreadSet.has(chat.id))
+  const agentUsage = (agentId: string): UsageTotals | undefined =>
+    chats.find(
+      (chat) =>
+        chat.projectId === activeProjectId &&
+        chat.agentId === agentId &&
+        (chat.kind === 'direct' || chat.kind === 'root'),
+    )?.usage
+  const projectUnread = (projectId: string) =>
+    chats.some((chat) => chat.projectId === projectId && unreadSet.has(chat.id))
 
   const openAgent = (agentId: string) => {
+    clearUnreadForAgent(agentId)
     void openAgentChat(agentId)
     setSidebarOpen(false)
   }
@@ -491,12 +563,23 @@ export function Sidebar() {
                   <span className="truncate text-[12px] font-semibold text-ink">
                     {orchestrator.name}
                   </span>
+                  {agentUnread(orchestrator.id) ? (
+                    <span
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+                      title="Finished — open to view"
+                      aria-label="Unread"
+                    />
+                  ) : null}
                   <Badge tone="accent">plans</Badge>
                 </span>
                 <span className="block truncate text-[9.5px] text-faint">
                   {busyFor(orchestrator.id)
                     ? `working on ${busyFor(orchestrator.id)}`
-                    : 'researches, plans, coordinates'}
+                    : agentUsage(orchestrator.id)
+                      ? `${fmtTokens(agentUsage(orchestrator.id)!.total)} tok · ${fmtCost(
+                          agentUsage(orchestrator.id)!.cost,
+                        )}`
+                      : 'researches, plans, coordinates'}
                 </span>
               </span>
             </button>
@@ -548,6 +631,8 @@ export function Sidebar() {
               agent={agent}
               busyTitle={busyFor(agent.id)}
               activeChatId={activeChatId}
+              unread={agentUnread(agent.id)}
+              usage={agentUsage(agent.id)}
               onOpen={() => openAgent(agent.id)}
               onEdit={() => openAgentSettings(agent.id)}
             />
@@ -621,6 +706,7 @@ export function Sidebar() {
               childrenByParent={childrenByParent}
               agentMap={agentMap}
               activeChatId={activeChatId}
+              unreadChatIds={unreadChatIds}
               expanded={expanded}
               setExpanded={setExpanded}
               openChat={(id) => void openChat(id)}
@@ -776,8 +862,10 @@ export function Sidebar() {
                     onSelect={() => setActiveProject(project.id)}
                     onEdit={() => openModal({ type: 'project', id: project.id })}
                     onMemory={() => void openMemory(project.id)}
+                    onArtifacts={() => openArtifactsPanel(project.id)}
                     onDelete={() => setProjectDeleteTarget(project)}
                     memoryActive={project.id === activeProjectId && memoryActive}
+                    unread={projectUnread(project.id)}
                   />
                   {project.id === activeProjectId ? renderActiveProject() : null}
                 </div>

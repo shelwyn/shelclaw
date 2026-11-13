@@ -1,4 +1,4 @@
-import { Brain, Link2, MessageSquare, Plus, RefreshCw, Settings } from 'lucide-react'
+import { Brain, Link2, Maximize2, MessageSquare, Minimize2, Plus, RefreshCw, Settings } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store'
 import type { Agent, MemoryGraph } from '../types'
@@ -27,7 +27,7 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
   } | null>(null)
   const dragRef = useRef<{ from: string } | null>(null)
 
-  const columns = 2
+  const columns = width >= 860 ? 5 : width >= 680 ? 4 : width >= 470 ? 3 : 2
   const gap = 8
   const rowHeight = 84
   const nodeWidth = Math.max(112, (width - gap) / columns)
@@ -265,10 +265,20 @@ export function MemoryPanel() {
   const refreshMemory = useAppStore((state) => state.refreshMemory)
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   const openModal = useAppStore((state) => state.openModal)
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     if (activeProjectId && !graph) void refreshMemory()
   }, [activeProjectId, graph, refreshMemory])
+
+  useEffect(() => {
+    if (!expanded) return
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpanded(false)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [expanded])
 
   if (loading && !graph) {
     return (
@@ -293,13 +303,21 @@ export function MemoryPanel() {
     )
   }
 
-  return (
+  const content = (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <span className="text-[10px] text-faint">
           {graph.agents.length} agents · {graph.links.length} links · {graph.memories.length} notes
         </span>
         <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
+          title={expanded ? 'Collapse memory graph' : 'Expand memory graph'}
+        >
+          {expanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+        </button>
         <button
           type="button"
           onClick={() => void refreshMemory()}
@@ -361,5 +379,34 @@ export function MemoryPanel() {
         )}
       </div>
     </div>
+  )
+
+  if (!expanded) return content
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+        onClick={() => setExpanded(false)}
+      />
+      <div className="fixed inset-3 z-50 mx-auto flex max-w-6xl flex-col rounded-xl border border-line bg-panel shadow-2xl sm:inset-6">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
+          <Brain className="h-4 w-4 text-accent" />
+          <span className="text-[12px] font-semibold text-ink">Agent memory</span>
+          <span className="text-[10px] text-faint">{graph.agents.length} agents</span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink"
+            aria-label="Collapse memory graph"
+            title="Collapse"
+          >
+            <Minimize2 className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">{content}</div>
+      </div>
+    </>
   )
 }

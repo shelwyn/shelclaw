@@ -3,6 +3,7 @@ import { AppError, isAbortError } from '../errors.js'
 import { streamLLM } from '../providers/index.js'
 import type { ChatTurn, ToolDefinition } from '../providers/types.js'
 import { extractPromptToolText } from '../providers/prompt-tools.js'
+import { listWorkspaceFiles } from '../preview.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
@@ -26,6 +27,8 @@ import {
   listMessages,
   listProjectAgents,
   listProviders,
+  recentArtifactPaths,
+  recordArtifacts,
   shiftQueuedMessage,
   updateChat,
   updateMessage,
@@ -117,7 +120,8 @@ function withWorkspaceWorkdir(provider: Provider, workspacePath: string): Provid
   return { ...provider, config: { ...config, workdir: workspacePath } }
 }
 
-function supportsTools(provider: Provider): boolean {  return provider.config?.tools !== false
+function supportsTools(provider: Provider): boolean {
+  return provider.config?.tools !== false
 }
 
 function usesPromptTools(provider: Provider): boolean {
@@ -534,12 +538,35 @@ const { run, chat } = ctx
       this.cleanupRun(run.id, chat.id)
       this.agentCounts.delete(run.id)
       this.emitRunState(run.id, chat.id)
+      this.captureArtifacts(ctx, true)
       if (!ctx.signal.aborted) this.drainQueue(chat.id)
     }
   }
 
-  drainQueue(chatId: string): void {
-    if (this.chatRuns.has(chatId)) return
+  private captureArtifacts(ctx: RunContext, root: boolean): void {
+    const workspacePath = ctx.project?.workspacePath
+    if (!workspacePath) return
+    try {
+      const since = ctx.run.startedAt - 1_500
+      let files = listWorkspaceFiles(workspacePath).filter((file) => file.modifiedAt >= since)
+      if (root) {
+        const claimed = recentArtifactPaths(ctx.project!.id, ctx.run.startedAt)
+        files = files.filter((file) => !claimed.has(file.path))
+      }
+      if (!files.length) return
+      recordArtifacts({
+        projectId: ctx.project!.id,
+        agentId: ctx.agent?.id || '',
+        chatId: ctx.chat.id,
+        files,
+      })
+      bus.emit('artifacts.changed', { projectId: ctx.project!.id })
+    } catch {
+      // Artifact tracking is best effort; never fail a run over it.
+    }
+  }
+
+  drainQueue(chatId: string): void {    if (this.chatRuns.has(chatId)) return
     const next = shiftQueuedMessage(chatId)
     if (!next) return
     bus.emit('queue.changed', { chatId })
@@ -743,6 +770,14 @@ const { run, chat } = ctx
     if (ctx.agent?.systemPrompt) parts.push(ctx.agent.systemPrompt)
     if (ctx.project?.systemPrompt && ctx.depth === 0) {
       parts.push(`## Project brief\n\n${ctx.project.systemPrompt}`)
+    }
+
+    if (ctx.depth === 0 && ctx.agent?.isOrchestrator && roster.length) {
+      parts.push(
+        `## Routing rule\n\nRoute each user request to the single best-matching specialist agent before doing the work yourself, including questions. Available specialists:\n${roster
+          .map((agent) => `- ${agent.name}: ${agent.description || 'no description'}`)
+          .join('\n')}\n\nAnswer directly only when no specialist matches or the request is project-level coordination. Use the delegation protocol exactly as instructed and synthesize the result.`,
+      )
     }
 
     if (ctx.agent) {
@@ -1065,6 +1100,7 @@ const { run, chat } = ctx
         bus.emit('task.updated', { chatId: childChat.id, rootChatId: parent.rootChatId, task: finalTask })
       }
       this.emitRunState(childRun.id, childChat.id)
+      this.captureArtifacts(ctx, false)
     }
   }
 }

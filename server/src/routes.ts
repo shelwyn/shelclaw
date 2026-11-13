@@ -45,6 +45,7 @@ import {
   getSettings,
   insertChatFile,
   listAgents,
+  listArtifacts,
   listChatFiles,
   listChats,
   listProjects,
@@ -544,6 +545,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       root: project.workspacePath,
       files: listWorkspaceFiles(project.workspacePath),
     }
+  })
+
+  app.get('/api/projects/:id/artifacts', async (req) => {
+    const { id } = req.params as { id: string }
+    const project = getProject(id)
+    if (!project) throw new AppError('Project not found.', 404)
+    return { artifacts: listArtifacts(id) }
   })
 
   app.get('/api/projects/:id/preview', async (req) => {

@@ -1,5 +1,6 @@
 import type {
   Agent,
+  Artifact,
   Bootstrap,
   Chat,
   ChatDetail,
@@ -134,6 +135,8 @@ export const api = {
 
   workspaceFiles: (projectId: string) =>
     request<{ root: string; files: WorkspaceFile[] }>(`/api/projects/${projectId}/files`),
+  artifacts: (projectId: string) =>
+    request<{ artifacts: Artifact[] }>(`/api/projects/${projectId}/artifacts`),
   previewWorkspaceFile: (projectId: string, filePath: string) =>
     request<PreviewPayload>(
       `/api/projects/${projectId}/preview?path=${encodeURIComponent(filePath)}`,

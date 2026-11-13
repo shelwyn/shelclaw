@@ -109,7 +109,7 @@ export default function App() {
     <div className="flex h-[100dvh] w-full overflow-hidden bg-bg">
       <Sidebar />
       <ChatView />
-      {(hasDetail || inspectorTab === 'memory') && inspectorOpen ? <Inspector /> : null}
+      {(hasDetail || inspectorTab !== 'orchestration') && inspectorOpen ? <Inspector /> : null}
       <PreviewDrawer />
 
       {modal?.type === 'settings' ? (

@@ -23,7 +23,7 @@ export type ModalState =
   | { type: 'project'; id?: string }
   | null
 
-export type InspectorTab = 'orchestration' | 'memory'
+export type InspectorTab = 'orchestration' | 'memory' | 'artifacts'
 
 export interface Toast {
   id: string
@@ -92,6 +92,8 @@ interface AppState {
   inspectorOpen: boolean
   previewOpen: boolean
   previewTarget: PreviewTarget | null
+  unreadChatIds: string[]
+  artifactsChangedAt: number
   sidebarOpen: boolean
   theme: 'light' | 'dark'
   modal: ModalState
@@ -121,7 +123,11 @@ interface AppState {
   setInspectorTab: (tab: InspectorTab) => void
   openPreview: (target: PreviewTarget) => void
   openFilesPanel: () => void
+  openArtifactsPanel: (projectId?: string) => void
   closePreview: () => void
+  markUnread: (chatId: string) => void
+  clearUnread: (chatId: string) => void
+  clearUnreadForAgent: (agentId: string) => void
   openMemory: (projectId?: string) => Promise<void>
   refreshMemory: () => Promise<void>
   createMemoryLink: (agentA: string, agentB: string) => Promise<void>
@@ -146,6 +152,8 @@ const emptyDetail = (chat: Chat): ChatDetail => ({
   runs: [],
   files: [],
   queue: [],
+  usage: { input: 0, output: 0, total: 0, cost: 0 },
+  context: { usedTokens: 0, limitTokens: 0, percent: 0 },
   orchestrationRunId: '',
   activeRunId: '',
 })
@@ -174,6 +182,23 @@ function errorText(err: unknown): string {
   if (err instanceof ApiError) return err.message
   if (err instanceof Error) return err.message
   return String(err)
+}
+
+function loadUnreadChats(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('ocx.unread') || '[]')
+    return Array.isArray(parsed) ? parsed.map(String) : []
+  } catch {
+    return []
+  }
+}
+
+function persistUnreadChats(chatIds: string[]): void {
+  try {
+    localStorage.setItem('ocx.unread', JSON.stringify(chatIds))
+  } catch {
+    // ignore
+  }
 }
 
 function parseHashChat(): string {
@@ -237,6 +262,7 @@ function handleEvent(event: BusEvent): void {
         }
       }
       if (message.role === 'agent') {
+        useAppStore.getState().markUnread(message.chatId)
         scheduleRefresh(250)
         if (state.inspectorTab === 'memory') void state.refreshMemory()
         const meta = (message.metadata || {}) as Record<string, unknown>
@@ -338,6 +364,10 @@ function handleEvent(event: BusEvent): void {
       break
     }
 
+    case 'artifacts.changed':
+      useAppStore.setState((current) => ({ artifactsChangedAt: current.artifactsChangedAt + 1 }))
+      break
+
     case 'settings.changed':
       void state.refresh()
       break
@@ -383,6 +413,7 @@ function handleEvent(event: BusEvent): void {
               }
             : current.detail,
       }))
+      if (run.status !== 'running') useAppStore.getState().markUnread(run.chatId)
       if (run.status !== 'running' && state.activeChatId === run.chatId) {
         setTimeout(() => {
           if (useAppStore.getState().activeChatId === run.chatId) {
@@ -507,6 +538,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   inspectorOpen: typeof window !== 'undefined' ? window.innerWidth >= 1280 : true,
   previewOpen: false,
   previewTarget: null,
+  unreadChatIds: typeof window !== 'undefined' ? loadUnreadChats() : [],
+  artifactsChangedAt: 0,
   sidebarOpen: false,
   theme: initialTheme(),
   modal: null,
@@ -585,6 +618,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       sidebarOpen: false,
       ...(known ? { activeProjectId: known.projectId } : {}),
     })
+    get().clearUnread(id)
     window.history.replaceState(null, '', `#/chat/${id}`)
     try {
       const detail = await api.chat(id)
@@ -834,7 +868,53 @@ export const useAppStore = create<AppState>((set, get) => ({
   openFilesPanel: () =>
     set({ previewTarget: null, previewOpen: true, sidebarOpen: false }),
 
+  openArtifactsPanel: (projectId) => {
+    const state = get()
+    const id = projectId || state.activeProjectId
+    if (!id) return
+    const sameProject = state.activeProjectId === id
+    set({
+      activeProjectId: id,
+      inspectorTab: 'artifacts',
+      inspectorOpen: true,
+      sidebarOpen: false,
+      ...(sameProject ? {} : { activeChatId: '', detail: null, loadingChat: false }),
+    })
+  },
+
   closePreview: () => set({ previewOpen: false, previewTarget: null }),
+
+  markUnread: (chatId) => {
+    set((state) => {
+      if (!chatId || state.activeChatId === chatId || state.unreadChatIds.includes(chatId)) {
+        return state
+      }
+      const next = [...state.unreadChatIds, chatId]
+      persistUnreadChats(next)
+      return { unreadChatIds: next }
+    })
+  },
+
+  clearUnread: (chatId) => {
+    set((state) => {
+      if (!state.unreadChatIds.includes(chatId)) return state
+      const next = state.unreadChatIds.filter((id) => id !== chatId)
+      persistUnreadChats(next)
+      return { unreadChatIds: next }
+    })
+  },
+
+  clearUnreadForAgent: (agentId) => {
+    set((state) => {
+      const agentChatIds = new Set(
+        state.chats.filter((chat) => chat.agentId === agentId).map((chat) => chat.id),
+      )
+      const next = state.unreadChatIds.filter((id) => !agentChatIds.has(id))
+      if (next.length === state.unreadChatIds.length) return state
+      persistUnreadChats(next)
+      return { unreadChatIds: next }
+    })
+  },
 
   openMemory: async (projectId) => {
     const state = get()

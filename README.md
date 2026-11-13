@@ -120,7 +120,11 @@ Open the right-hand file panel from the folder icon in the chat header, the **Fi
 | Text, Markdown, JSON, code, logs | Monospace text |
 | Other / legacy `.doc` / `.xls` | Download prompt |
 
-Files created or edited by agents inside the project workspace appear in the **Workspace files** list. Harnesses run in the project workspace by default unless their own working directory is configured, so agent file edits show up here automatically. Previews are read-only and served from the local server; the download button saves the original file.
+Files created or edited by agents inside the project workspace appear in the **Workspace files** list and in the inspector's **Files** tab. Harnesses run in the project workspace by default unless their own working directory is configured, so agent file edits show up here automatically. Previews are read-only and served from the local server; the download button saves the original file.
+
+### Artifacts
+
+The inspector's **Files** tab is the project artifact index. It groups every uploaded file and every agent-created or agent-edited workspace file by the agent that produced it, with search and refresh. Click any artifact to preview it. New artifacts appear automatically when a run finishes.
 
 ## Message queue
 
@@ -144,12 +148,17 @@ The Orchestrator prompt emphasises:
 
 - researching the problem and gathering context itself
 - planning goals, constraints, risks and verification
-- delegating substantial, independent execution work when specialist agents exist
+- routing every request to the single best-matching specialist agent when one exists, including short questions
 - synthesising and verifying the results rather than dumping raw output
 
-Create agents with **+** in the Agents section. Each agent has its own name, prompt, colour, harness, model and delegation limits. The settings gear opens the editor.
+Create agents with **+** in the Agents section. Give each agent a clear name and description; the Orchestrator uses them to decide where work should go. Each agent has its own prompt, colour, harness, model and delegation limits. The settings gear opens the editor.
 
 Clicking an agent opens a persistent **direct chat** with that agent. A direct chat still supports delegation and reports; if you archive or delete the direct chat, clicking the agent creates a fresh one.
+
+### Activity and usage
+
+- **Unread dots** — when an agent or the Orchestrator finishes a run or task, its chat, agent row and project row show a green dot. The dot clears when you open that chat or click the agent.
+- **Usage stats** — the chat header shows total tokens, context-window percentage and estimated cost for that chat. Agent rows show token/cost totals for their direct chat. Context limits come from `contextTokens` or `contextChars` in the harness advanced config.
 
 ## Agent reports
 
@@ -173,6 +182,7 @@ Memory lives in the **right-hand inspector**. Open it with the brain icon next t
 - Memory is injected into prompts as "Shared memory", clearly separated from instructions.
 - Orchestrator memory shows up in the same graph as specialist memory.
 - Notes and links are mirrored into the project workspace (`memory/` and `embeddings/`).
+- Click the expand icon to open the graph in a large overlay; collapse it or press `Esc` to return to the inspector.
 
 ![Agent memory graph](docs/screenshot-memory.png)
 
@@ -479,11 +489,12 @@ All endpoints are under `/api`; JSON in/out, SSE at `/api/events`.
 - `GET/POST /api/chats/:id/files` (multipart upload, max 25 MB × 8), `GET/DELETE /api/files/:id`
 - `GET /api/files/:id/preview`, `GET /api/files/:id?inline=1`
 - `GET /api/projects/:id/files`, `GET /api/projects/:id/preview?path=…`, `GET /api/projects/:id/file?path=…`
+- `GET /api/projects/:id/artifacts` — uploads plus agent-created workspace files
 - `DELETE /api/queue/:id` removes a queued message; `POST /api/chats/:id/messages` returns `{queued: true}` when the chat is busy
 - `POST /api/chats/:id/cancel`, `POST /api/runs/:id/cancel`
 - `PATCH /api/settings`
 
-SSE event types include `message.created`, `message.delta`, `message.completed`, `task.created`, `task.updated`, `run.created`, `run.updated`, `chat.updated`, `chats.changed`, `agents.changed`, `memory.changed`, `toast`.
+SSE event types include `message.created`, `message.delta`, `message.completed`, `task.created`, `task.updated`, `run.created`, `run.updated`, `chat.updated`, `chats.changed`, `queue.changed`, `agents.changed`, `memory.changed`, `artifacts.changed`, `toast`.
 
 ## Scripts
 

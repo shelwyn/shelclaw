@@ -27,6 +27,13 @@ export function fmtTokens(value?: number): string {
   return String(value)
 }
 
+export function fmtCost(value?: number): string {
+  if (!value) return '$0.00'
+  if (value < 0.01) return '<$0.01'
+  if (value < 1) return `$${value.toFixed(3)}`
+  return `$${value.toFixed(2)}`
+}
+
 export function totalTokens(...usages: Array<{ input?: number; output?: number; total?: number } | undefined>): number {
   return usages.reduce((sum, usage) => {
     if (!usage) return sum

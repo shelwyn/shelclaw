@@ -88,6 +88,20 @@ export interface Chat {
   lastMessageAt: number
   messageCount?: number
   childCount?: number
+  usage?: UsageTotals
+}
+
+export interface UsageTotals {
+  input: number
+  output: number
+  total: number
+  cost: number
+}
+
+export interface ContextUsage {
+  usedTokens: number
+  limitTokens: number
+  percent: number
 }
 
 export interface Message {
@@ -170,6 +184,8 @@ export interface ChatDetail {
   runs: Run[]
   files: ChatFile[]
   queue: QueuedMessage[]
+  usage: UsageTotals
+  context: ContextUsage
   orchestrationRunId: string
   activeRunId: string
 }
@@ -188,6 +204,20 @@ export interface WorkspaceFile {
   name: string
   size: number
   modifiedAt: number
+}
+
+export interface Artifact {
+  id: string
+  projectId: string
+  agentId: string
+  chatId: string
+  name: string
+  path: string
+  fileId: string
+  source: 'workspace' | 'upload'
+  size: number
+  modifiedAt: number
+  createdAt: number
 }
 
 export interface PreviewSheet {

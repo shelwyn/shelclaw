@@ -8,9 +8,11 @@ import type {
   AgentLink,
   AgentMemory,
   AppSettings,
+  Artifact,
   Chat,
   ChatDetail,
   ChatFile,
+  ContextUsage,
   MemoryGraph,
   Message,
   Project,
@@ -21,6 +23,7 @@ import type {
   SafeProvider,
   Task,
   Usage,
+  UsageTotals,
 } from './types.js'
 import { id, now, parseJson } from './util.js'
 
@@ -135,8 +138,32 @@ function mapRun(r: Row): Run {
   }
 }
 
-function mapTask(r: Row): Task {
-  return {
+function emptyUsageTotals(): UsageTotals {
+  return { input: 0, output: 0, total: 0, cost: 0 }
+}
+
+function addUsageTotals(acc: UsageTotals, usage: Usage): void {
+  const input = Number(usage.input || 0)
+  const output = Number(usage.output || 0)
+  acc.input += input
+  acc.output += output
+  acc.total += Number(usage.total ?? input + output)
+  acc.cost += Number(usage.cost || 0)
+}
+
+function usageByChat(): Map<string, UsageTotals> {
+  const result = new Map<string, UsageTotals>()
+  const rows = db.prepare('SELECT chat_id, usage FROM runs').all() as Row[]
+  for (const row of rows) {
+    const chatId = s(row.chat_id)
+    const current = result.get(chatId) || emptyUsageTotals()
+    addUsageTotals(current, parseJson<Usage>(row.usage, {}))
+    result.set(chatId, current)
+  }
+  return result
+}
+
+function mapTask(r: Row): Task {  return {
     id: s(r.id),
     runId: s(r.run_id),
     rootRunId: s(r.root_run_id),
@@ -379,6 +406,7 @@ export function deleteProject(projectId: string): boolean {
   for (const chat of chats) deleteChat(s(chat.id))
   db.prepare('DELETE FROM agent_links WHERE project_id = ?').run(projectId)
   db.prepare('DELETE FROM agent_memory WHERE project_id = ?').run(projectId)
+  db.prepare('DELETE FROM artifacts WHERE project_id = ?').run(projectId)
   db.prepare('DELETE FROM agents WHERE project_id = ?').run(projectId)
   const res = db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
   return Number(res.changes) > 0
@@ -393,8 +421,9 @@ You are responsible for the user's outcome. You have full research and planning 
 Operating rules:
 - Research first when the request is ambiguous or technically uncertain. Do not invent facts, files, APIs, or sources.
 - Plan explicitly: goals, constraints, approach, risks, and verification.
-- If the project has specialist agents, delegate substantial, independent execution work to them. Use the delegation protocol exactly as instructed.
-- Do not delegate trivial questions, and never delegate the final synthesis.
+- If the project has specialist agents, route each user request to the single best-matching agent before doing the work yourself. Match the request to an agent's name, description and specialty. This applies to questions too, not only large tasks.
+- Only answer directly when no specialist matches, or when the request is project-level coordination or meta-conversation.
+- Use the delegation protocol exactly as instructed. Never delegate the final synthesis.
 - Give every delegated task a complete, self-contained brief with context, constraints, and the expected deliverable.
 - Choose the most suitable project agent per task. Override the model only when it helps.
 - After results arrive, verify them, resolve contradictions, and answer the user directly.
@@ -423,7 +452,16 @@ export function ensureProjectOrchestrator(projectId: string): Agent {
 
 export function ensureProjectOrchestrators(): void {
   const projects = db.prepare('SELECT id FROM projects').all() as Row[]
-  for (const project of projects) ensureProjectOrchestrator(s(project.id))
+  for (const project of projects) {
+    const orchestrator = ensureProjectOrchestrator(s(project.id))
+    // Upgrade the previous default prompt without touching custom orchestrator prompts.
+    if (orchestrator.systemPrompt.includes('Do not delegate trivial questions')) {
+      db.prepare('UPDATE agents SET system_prompt = ? WHERE id = ?').run(
+        ORCHESTRATOR_PROMPT,
+        orchestrator.id,
+      )
+    }
+  }
 }
 
 export function listAgents(projectId?: string): Agent[] {
@@ -549,10 +587,12 @@ export function listChats(): ChatWithCounts[] {
        ORDER BY c.last_message_at DESC, c.created_at DESC`,
     )
     .all() as Row[]
+  const usageMap = usageByChat()
   return rows.map((r) => ({
     ...mapChat(r),
     messageCount: n(r.message_count),
     childCount: n(r.child_count),
+    usage: usageMap.get(s(r.id)) || emptyUsageTotals(),
   }))
 }
 
@@ -1297,6 +1337,95 @@ export function listQueuedChatIds(): string[] {
   ).map((row) => s(row.chat_id))
 }
 
+/* --------------------------------- artifacts ---------------------------------- */
+
+function mapArtifact(r: Row): Artifact {
+  return {
+    id: s(r.id),
+    projectId: s(r.project_id),
+    agentId: s(r.agent_id),
+    chatId: s(r.chat_id),
+    name: s(r.name),
+    path: s(r.path),
+    fileId: '',
+    source: 'workspace',
+    size: n(r.size),
+    modifiedAt: n(r.modified_at),
+    createdAt: n(r.created_at),
+  }
+}
+
+export function recordArtifacts(input: {
+  projectId: string
+  agentId: string
+  chatId: string
+  files: Array<{ path: string; name: string; size: number; modifiedAt: number }>
+}): void {
+  if (!input.files.length) return
+  const stmt = db.prepare(
+    `INSERT INTO artifacts (id, project_id, agent_id, chat_id, path, name, size, modified_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(project_id, path) DO UPDATE SET
+       agent_id = excluded.agent_id,
+       chat_id = excluded.chat_id,
+       size = excluded.size,
+       modified_at = excluded.modified_at`,
+  )
+  const t = now()
+  for (const file of input.files) {
+    stmt.run(
+      id('art'),
+      input.projectId,
+      input.agentId,
+      input.chatId,
+      file.path,
+      file.name,
+      Math.round(file.size),
+      Math.round(file.modifiedAt),
+      t,
+    )
+  }
+}
+
+export function recentArtifactPaths(projectId: string, since: number): Set<string> {
+  const rows = db
+    .prepare('SELECT path FROM artifacts WHERE project_id = ? AND created_at >= ?')
+    .all(projectId, since) as Row[]
+  return new Set(rows.map((row) => s(row.path)))
+}
+
+export function listArtifacts(projectId: string): Artifact[] {
+  const workspace = (db
+    .prepare('SELECT * FROM artifacts WHERE project_id = ? ORDER BY modified_at DESC')
+    .all(projectId) as Row[]).map(mapArtifact)
+
+  const uploads = db
+    .prepare(
+      `SELECT f.*, c.agent_id AS chat_agent_id
+       FROM chat_files f
+       LEFT JOIN chats c ON c.id = f.chat_id
+       WHERE f.project_id = ?
+       ORDER BY f.created_at DESC`,
+    )
+    .all(projectId) as Row[]
+
+  const uploadArtifacts: Artifact[] = uploads.map((row) => ({
+    id: s(row.id),
+    projectId: s(row.project_id),
+    agentId: s(row.chat_agent_id),
+    chatId: s(row.chat_id),
+    name: s(row.name),
+    path: '',
+    fileId: s(row.id),
+    source: 'upload',
+    size: n(row.size),
+    modifiedAt: n(row.created_at),
+    createdAt: n(row.created_at),
+  }))
+
+  return [...workspace, ...uploadArtifacts].sort((a, b) => b.modifiedAt - a.modifiedAt)
+}
+
 /* --------------------------------- chat detail -------------------------------- */
 
 export function getChatDetail(chatId: string): ChatDetail | undefined {
@@ -1305,13 +1434,37 @@ export function getChatDetail(chatId: string): ChatDetail | undefined {
   const rootChatId = chat.rootChatId || chat.id
   const latestRootRun =
     rootChatId === chatId ? latestRun(chatId) : latestRun(rootChatId)
+  const messages = listMessages(chatId)
+  const usage = usageByChat().get(chatId) || emptyUsageTotals()
+  const provider = chat.providerId ? getProvider(chat.providerId) : undefined
+  const config = (provider?.config || {}) as Record<string, unknown>
+  const contextChars = Number(config.contextChars || 220_000)
+  const limitTokens = Math.max(
+    1_000,
+    Math.round(Number(config.contextTokens || contextChars / 4)),
+  )
+  const latest = latestRun(chatId)
+  const estimated = Math.ceil(
+    messages.reduce((sum, message) => sum + message.content.length + message.reasoning.length, 0) / 4,
+  )
+  const usedTokens = Math.max(
+    0,
+    latest?.usage?.input ? latest.usage.input + (latest.usage.output || 0) : estimated,
+  )
+  const context: ContextUsage = {
+    usedTokens,
+    limitTokens,
+    percent: Math.min(100, Math.round((usedTokens / limitTokens) * 100)),
+  }
   return {
     chat,
-    messages: listMessages(chatId),
+    messages,
     tasks: listTasksForRootChat(rootChatId),
     runs: listRuns(chatId),
     files: listChatFiles(chatId),
     queue: listQueuedMessages(chatId),
+    usage,
+    context,
     orchestrationRunId: latestRootRun?.id || '',
   } as ChatDetail
 }

@@ -110,14 +110,15 @@ function addUsage(a: Usage, b: Usage): Usage {
 }
 
 /**
- * Run harnesses inside the project workspace unless the provider explicitly
- * configures its own working directory. This makes agent-created files visible
- * in the project file browser and preview panel.
+ * Every harness runs inside the project's runtime_files folder. This keeps
+ * generated scripts, reports and other execution output inside the project
+ * directory regardless of any working directory stored on the harness.
  */
-function withWorkspaceWorkdir(provider: Provider, workspacePath: string): Provider {
-  const config = provider.config || {}
-  if (!workspacePath || (typeof config.workdir === 'string' && config.workdir.trim())) return provider
-  return { ...provider, config: { ...config, workdir: workspacePath } }
+function withRuntimeWorkdir(provider: Provider, workspacePath: string): Provider {
+  if (!workspacePath) return provider
+  const runtimeDir = path.join(workspacePath, 'runtime_files')
+  fs.mkdirSync(runtimeDir, { recursive: true })
+  return { ...provider, config: { ...provider.config, workdir: runtimeDir } }
 }
 
 function supportsTools(provider: Provider): boolean {
@@ -440,7 +441,7 @@ export class Orchestrator {
       throw new AppError('No harness configured yet. Open Settings → Connect Harness and add one.', 400)
     }
     validateModel(choice.provider, choice.model)
-    const provider = withWorkspaceWorkdir(choice.provider, project.workspacePath)
+    const provider = withRuntimeWorkdir(choice.provider, project.workspacePath)
 
     const shouldTitle = settings.autoTitle && (!chat.title || chat.title === 'New chat')
     chat = updateChat(chatId, {
@@ -543,10 +544,53 @@ const { run, chat } = ctx
     }
   }
 
+  private adoptExternalArtifacts(ctx: RunContext): void {
+    const workspacePath = ctx.project?.workspacePath
+    if (!workspacePath) return
+    const runtimeDir = path.join(workspacePath, 'runtime_files')
+    const since = ctx.run.startedAt - 1_500
+    const messages = listMessages(ctx.chat.id).filter(
+      (message) => message.role === 'assistant' && message.createdAt >= since,
+    )
+    const seen = new Set<string>()
+    for (const message of messages) {
+      const matches = message.content.matchAll(/(?:[A-Za-z]:\\|\/)[^\s"'`<>)]{2,}/g)
+      for (const match of matches) {
+        let candidate = match[0].replace(/[.,;:!?]+$/, '')
+        if (!path.isAbsolute(candidate) || seen.has(candidate)) continue
+        seen.add(candidate)
+        try {
+          if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) continue
+          const resolved = path.resolve(candidate)
+          if (resolved === path.resolve(workspacePath)) continue
+          if (resolved.startsWith(path.resolve(workspacePath) + path.sep)) continue
+          const stat = fs.statSync(resolved)
+          if (stat.size > 50 * 1024 * 1024) continue
+          fs.mkdirSync(runtimeDir, { recursive: true })
+          const baseName = path.basename(resolved)
+          let destination = path.join(runtimeDir, baseName)
+          if (fs.existsSync(destination)) {
+            const extension = path.extname(baseName)
+            const stem = path.basename(baseName, extension)
+            let counter = 1
+            while (fs.existsSync(destination)) {
+              destination = path.join(runtimeDir, `${stem}-${counter}${extension}`)
+              counter++
+            }
+          }
+          fs.copyFileSync(resolved, destination)
+        } catch {
+          // Ignore unreadable paths mentioned in agent output.
+        }
+      }
+    }
+  }
+
   private captureArtifacts(ctx: RunContext, root: boolean): void {
     const workspacePath = ctx.project?.workspacePath
     if (!workspacePath) return
     try {
+      this.adoptExternalArtifacts(ctx)
       const since = ctx.run.startedAt - 1_500
       let files = listWorkspaceFiles(workspacePath).filter((file) => file.modifiedAt >= since)
       if (root) {
@@ -780,6 +824,13 @@ const { run, chat } = ctx
       )
     }
 
+    if (ctx.project?.workspacePath) {
+      const runtimeDir = path.join(ctx.project.workspacePath, 'runtime_files')
+      parts.push(
+        `## Workspace and files\n\nYour working directory is ${runtimeDir}. All files you create, edit, export, or generate — scripts, reports, spreadsheets, images, notebooks, downloads, temporary execution files — must stay inside this folder or elsewhere under the project workspace ${ctx.project.workspacePath}. Never write to Downloads, Desktop, Documents, the home directory, /tmp, or any path outside the project workspace. Use relative paths (for example report.xlsx, which is created inside runtime_files) or paths under ${ctx.project.workspacePath}. Uploaded files are referenced by absolute paths inside the project workspace; read them there. If a requested output path is outside the project workspace, write the file into ${runtimeDir} instead and report that path.`,
+      )
+    }
+
     if (ctx.agent) {
       const notes = getSharedMemory(ctx.agent.id, ctx.chat.projectId, 8)
       if (notes.length) {
@@ -946,7 +997,7 @@ const { run, chat } = ctx
         error: err instanceof Error ? err.message : String(err),
       }
     }
-    const childProvider = withWorkspaceWorkdir(choice.provider, parent.project?.workspacePath || '')
+    const childProvider = withRuntimeWorkdir(choice.provider, parent.project?.workspacePath || '')
 
     const maxAgents = Math.max(1, parent.settings.maxAgents || 24)
     const spawned = this.agentCounts.get(parent.rootRunId) || 0

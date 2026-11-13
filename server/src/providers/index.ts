@@ -18,12 +18,7 @@ const adapters: Record<ProviderKind, ProviderAdapter> = {
   'local-harness': localHarnessAdapter,
 }
 
-export const PROVIDER_KINDS: ProviderKind[] = [
-  'opencode-server',
-  'opencode',
-  'claude-code',
-  'local-harness',
-]
+export const PROVIDER_KINDS: ProviderKind[] = ['opencode-server', 'opencode']
 
 export function getAdapter(provider: Provider): ProviderAdapter {
   const adapter = adapters[provider.kind]

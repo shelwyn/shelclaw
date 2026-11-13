@@ -57,26 +57,6 @@ const TEMPLATES: ProviderTemplate[] = [
     command: 'opencode',
     hint: 'Runs `opencode run` locally and uses your OpenCode configuration.',
   },
-  {
-    label: 'Claude Code CLI',
-    kind: 'claude-code',
-    command: 'claude',
-    hint: 'Runs `claude -p` locally and uses your Claude Code login.',
-  },
-  {
-    label: 'Pi CLI',
-    kind: 'local-harness',
-    command: 'pi',
-    args: ['-p', '--mode', 'text', '--'],
-    promptMode: 'arg',
-    modelFlag: '--model',
-    hint: 'Runs Pi in non-interactive mode on this machine.',
-  },
-  {
-    label: 'Custom local harness',
-    kind: 'local-harness',
-    hint: 'Any local CLI coding agent that accepts a prompt or stdin.',
-  },
 ]
 
 interface ProviderForm {
@@ -92,7 +72,6 @@ interface ProviderForm {
   argsText: string
   promptMode: 'arg' | 'stdin'
   modelFlag: string
-  workdir: string
   agent: string
   clearKey: boolean
 }
@@ -110,7 +89,6 @@ const emptyForm = (): ProviderForm => ({
   argsText: '',
   promptMode: 'arg',
   modelFlag: '',
-  workdir: '',
   agent: 'build',
   clearKey: false,
 })
@@ -118,7 +96,6 @@ const emptyForm = (): ProviderForm => ({
 function formFromProvider(provider: Provider): ProviderForm {
   const config = { ...(provider.config || {}) }
   const command = typeof config.command === 'string' ? config.command : ''
-  const workdir = typeof config.workdir === 'string' ? config.workdir : ''
   const agent = typeof config.agent === 'string' ? config.agent : 'build'
   const args = Array.isArray(config.args) ? config.args.map(String) : []
   const promptMode = config.promptMode === 'stdin' ? 'stdin' : 'arg'
@@ -142,7 +119,6 @@ function formFromProvider(provider: Provider): ProviderForm {
     argsText: args.join('\n'),
     promptMode,
     modelFlag,
-    workdir,
     agent,
     clearKey: false,
   }
@@ -287,7 +263,6 @@ function ProviderFormView({
         }
       }
       if (kind === 'opencode') return { ...current, kind, command: current.command || 'opencode' }
-      if (kind === 'claude-code') return { ...current, kind, command: current.command || 'claude' }
       return { ...current, kind }
     })
   }
@@ -319,7 +294,6 @@ function ProviderFormView({
     }
     if (isCommandHarness(form.kind)) {
       if (form.command.trim()) config.command = form.command.trim()
-      if (form.workdir.trim()) config.workdir = form.workdir.trim()
       const args = form.argsText
         .split('\n')
         .map((arg) => arg.trim())
@@ -329,8 +303,8 @@ function ProviderFormView({
     }
     if (isOpenCodeServer(form.kind)) {
       if (form.agent.trim()) config.agent = form.agent.trim()
-      if (form.workdir.trim()) config.workdir = form.workdir.trim()
     }
+    delete config.workdir
     if (isLocalHarness(form.kind)) {
       config.promptMode = form.promptMode
       if (form.modelFlag.trim()) config.modelFlag = form.modelFlag.trim()
@@ -495,8 +469,6 @@ function ProviderFormView({
               [
                 'opencode-server',
                 'opencode',
-                'claude-code',
-                'local-harness',
               ] as ProviderKind[]
             ).map((kind) => (
               <option key={kind} value={kind}>
@@ -553,24 +525,14 @@ function ProviderFormView({
             </Field>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="OpenCode agent" hint="build, plan, general, or a custom agent id.">
-              <Input
-                value={form.agent}
-                onChange={(event) => update('agent', event.target.value)}
-                placeholder="build"
-                className="font-mono text-[12px]"
-              />
-            </Field>
-            <Field label="Working directory" hint="Optional project directory on the OpenCode server.">
-              <Input
-                value={form.workdir}
-                onChange={(event) => update('workdir', event.target.value)}
-                placeholder="/path/to/project"
-                className="font-mono text-[12px]"
-              />
-            </Field>
-          </div>
+          <Field label="OpenCode agent" hint="build, plan, general, or a custom agent id.">
+            <Input
+              value={form.agent}
+              onChange={(event) => update('agent', event.target.value)}
+              placeholder="build"
+              className="font-mono text-[12px]"
+            />
+          </Field>
 
           {savedProvider?.hasKey ? (
             <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted">
@@ -586,26 +548,14 @@ function ProviderFormView({
         </>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Command" hint="Executable on the server host.">
-              <Input
-                value={form.command}
-                onChange={(event) => update('command', event.target.value)}
-                placeholder={
-                  form.kind === 'opencode' ? 'opencode' : form.kind === 'claude-code' ? 'claude' : 'pi'
-                }
-                className="font-mono text-[12px]"
-              />
-            </Field>
-            <Field label="Working directory" hint="Optional. Defaults to the server process cwd.">
-              <Input
-                value={form.workdir}
-                onChange={(event) => update('workdir', event.target.value)}
-                placeholder="/path/to/project"
-                className="font-mono text-[12px]"
-              />
-            </Field>
-          </div>
+          <Field label="Command" hint="Executable on the server host.">
+            <Input
+              value={form.command}
+              onChange={(event) => update('command', event.target.value)}
+              placeholder="opencode"
+              className="font-mono text-[12px]"
+            />
+          </Field>
 
           <Field
             label="Arguments"
@@ -620,51 +570,14 @@ function ProviderFormView({
             />
           </Field>
 
-          {isLocalHarness(form.kind) ? (
-            <>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Prompt transport" hint="How the prompt is delivered to the harness.">
-                  <Select
-                    value={form.promptMode}
-                    onChange={(event) =>
-                      update('promptMode', event.target.value as 'arg' | 'stdin')
-                    }
-                  >
-                    <option value="arg">As the final argument</option>
-                    <option value="stdin">On stdin</option>
-                  </Select>
-                </Field>
-                <Field label="Model flag" hint="Optional, e.g. --model. Leave empty if unsupported.">
-                  <Input
-                    value={form.modelFlag}
-                    onChange={(event) => update('modelFlag', event.target.value)}
-                    placeholder="--model"
-                    className="font-mono text-[12px]"
-                  />
-                </Field>
-              </div>
-              <Field
-                label="Default model"
-                hint="Optional. Leave blank to use the harness default."
-              >
-                <Input
-                  value={form.defaultModel}
-                  onChange={(event) => update('defaultModel', event.target.value)}
-                  placeholder="provider/model"
-                  className="font-mono text-[12px]"
-                />
-              </Field>
-            </>
-          ) : (
-            <Field label="Default model" hint="Optional. Empty uses the harness default.">
-              <Input
-                value={form.defaultModel}
-                onChange={(event) => update('defaultModel', event.target.value)}
-                placeholder="provider/model"
-                className="font-mono text-[12px]"
-              />
-            </Field>
-          )}
+          <Field label="Default model" hint="Optional. Empty uses the harness default.">
+            <Input
+              value={form.defaultModel}
+              onChange={(event) => update('defaultModel', event.target.value)}
+              placeholder="provider/model"
+              className="font-mono text-[12px]"
+            />
+          </Field>
         </>
       )}
 
@@ -679,18 +592,16 @@ function ProviderFormView({
           <Zap className="h-3.5 w-3.5" />
           Test connection
         </Button>
-        {!isLocalHarness(form.kind) ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void fetchModels()}
-            disabled={testing}
-            loading={fetching}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Fetch models
-          </Button>
-        ) : null}
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => void fetchModels()}
+          disabled={testing}
+          loading={fetching}
+        >
+          <Download className="h-3.5 w-3.5" />
+          Fetch models
+        </Button>
         <span className="text-[10.5px] text-faint">
           Uses the values above — save after a successful test.
         </span>
@@ -698,19 +609,13 @@ function ProviderFormView({
 
       <Field
         label="Models"
-        hint={
-          isLocalHarness(form.kind)
-            ? 'Optional. Enter model IDs manually, or leave blank to use the harness default.'
-            : 'One per line. Fetch from the harness or enter model ids manually.'
-        }
+        hint="One per line. Fetch from OpenCode or enter model ids manually."
       >
         <Textarea
           value={form.modelsText}
           onChange={(event) => update('modelsText', event.target.value)}
           rows={4}
-          placeholder={
-            isLocalHarness(form.kind) ? 'provider/model\nprovider/another-model' : 'provider/model'
-          }
+          placeholder="provider/model"
           className="font-mono text-[11.5px]"
         />
       </Field>
@@ -830,10 +735,10 @@ function ProviderList({ onAdd, onEdit }: { onAdd: () => void; onEdit: (provider:
         <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-panel2 text-muted">
           <Terminal className="h-4 w-4" />
         </div>
-        <div className="mt-3 text-[13px] font-medium text-ink">Connect a harness</div>
+        <div className="mt-3 text-[13px] font-medium text-ink">Connect OpenCode</div>
         <p className="mx-auto mt-1 max-w-sm text-[11.5px] leading-relaxed text-muted">
-          Connect a local agent harness such as OpenCode, Claude Code, Pi, or any custom local
-          command. Connections are saved in the SQLite database and persist across restarts.
+          Connect an OpenCode server or the local OpenCode CLI. Connections are saved in the
+          SQLite database and persist across restarts.
         </p>
         <Button variant="primary" size="md" className="mt-4" onClick={onAdd}>
           <Plus className="h-4 w-4" /> Connect harness
@@ -934,8 +839,8 @@ function ProviderList({ onAdd, onEdit }: { onAdd: () => void; onEdit: (provider:
         )
       })}
       <p className="pt-1 text-[10px] leading-relaxed text-faint">
-        Only local harnesses are supported. Harnesses delegate through OpenCodex's prompt protocol,
-        so recursive orchestration still works without any cloud LLM connection.
+        OpenCode server and OpenCode CLI are supported. OpenCode delegates through OpenCodex's prompt
+        protocol, so recursive orchestration works without any cloud LLM connection.
       </p>
 
       <ConfirmDialog

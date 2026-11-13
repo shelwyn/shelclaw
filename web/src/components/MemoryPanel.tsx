@@ -1,4 +1,14 @@
-import { Brain, Link2, Maximize2, MessageSquare, Minimize2, Plus, RefreshCw, Settings } from 'lucide-react'
+import {
+  Brain,
+  Link2,
+  Maximize2,
+  MessageSquare,
+  Minimize2,
+  Plus,
+  RefreshCw,
+  Settings,
+  X,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store'
 import type { Agent, MemoryGraph } from '../types'
@@ -11,7 +21,20 @@ interface Position {
   y: number
 }
 
-function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
+interface NodeOverride {
+  x: number
+  y: number
+}
+
+function MemoryCanvas({
+  graph,
+  expanded,
+  onOpenAgentMemory,
+}: {
+  graph: MemoryGraph
+  expanded: boolean
+  onOpenAgentMemory: (agentId: string) => void
+}) {
   const createMemoryLink = useAppStore((state) => state.createMemoryLink)
   const removeMemoryLink = useAppStore((state) => state.removeMemoryLink)
   const openAgentChat = useAppStore((state) => state.openAgentChat)
@@ -19,6 +42,8 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
   const chats = useAppStore((state) => state.chats)
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(290)
+  const [canvasHeight, setCanvasHeight] = useState(240)
+  const [overrides, setOverrides] = useState<Record<string, NodeOverride>>({})
   const [dragLine, setDragLine] = useState<{
     startX: number
     startY: number
@@ -26,25 +51,40 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
     y: number
   } | null>(null)
   const dragRef = useRef<{ from: string } | null>(null)
+  const [moveDrag, setMoveDrag] = useState<{
+    agentId: string
+    offsetX: number
+    offsetY: number
+    startX: number
+    startY: number
+    moved: boolean
+  } | null>(null)
 
   const columns = width >= 860 ? 5 : width >= 680 ? 4 : width >= 470 ? 3 : 2
-  const gap = 8
-  const rowHeight = 84
-  const nodeWidth = Math.max(112, (width - gap) / columns)
-  const rows = Math.ceil(graph.agents.length / columns)
-  const height = Math.max(120, rows * rowHeight)
+  const gap = 10
+  const nodeWidth = Math.max(118, (width - gap * (columns - 1)) / columns)
+  const rows = Math.max(1, Math.ceil(graph.agents.length / columns))
+  const rowHeight = expanded
+    ? Math.max(118, Math.floor(canvasHeight / rows))
+    : 88
+  const height = expanded
+    ? Math.max(canvasHeight, rows * rowHeight, 320)
+    : Math.max(140, rows * rowHeight)
 
   useEffect(() => {
     const element = containerRef.current
     if (!element) return
-    const measure = () => setWidth(element.clientWidth)
+    const measure = () => {
+      setWidth(element.clientWidth)
+      setCanvasHeight(element.clientHeight)
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [])
+  }, [expanded])
 
-  const positions = useMemo<Position[]>(
+  const defaultPositions = useMemo<Position[]>(
     () =>
       graph.agents.map((agent, index) => {
         const row = Math.floor(index / columns)
@@ -55,8 +95,18 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
           y: row * rowHeight + rowHeight / 2,
         }
       }),
-    [graph.agents, nodeWidth],
+    [graph.agents, nodeWidth, rowHeight],
   )
+
+  const positions = useMemo<Position[]>(
+    () =>
+      defaultPositions.map((position) => {
+        const override = overrides[position.agent.id]
+        return override ? { ...position, x: override.x, y: override.y } : position
+      }),
+    [defaultPositions, overrides],
+  )
+
   const positionMap = useMemo(
     () => new Map(positions.map((position) => [position.agent.id, position])),
     [positions],
@@ -107,7 +157,42 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
     }
   }, [Boolean(dragLine), createMemoryLink])
 
-  const beginDrag = (agentId: string, event: React.PointerEvent) => {
+  useEffect(() => {
+    if (!moveDrag) return
+    const move = (event: PointerEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const nextX = Math.min(
+        Math.max(56, event.clientX - rect.left - moveDrag.offsetX),
+        Math.max(56, rect.width - 56),
+      )
+      const nextY = Math.min(
+        Math.max(34, event.clientY - rect.top - moveDrag.offsetY),
+        Math.max(34, rect.height - 34),
+      )
+      const moved =
+        moveDrag.moved ||
+        Math.abs(event.clientX - moveDrag.startX) > 3 ||
+        Math.abs(event.clientY - moveDrag.startY) > 3
+      if (moved !== moveDrag.moved) setMoveDrag({ ...moveDrag, moved })
+      setOverrides((current) => ({
+        ...current,
+        [moveDrag.agentId]: { x: nextX, y: nextY },
+      }))
+    }
+    const up = () => {
+      if (!moveDrag.moved) onOpenAgentMemory(moveDrag.agentId)
+      setMoveDrag(null)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up, { once: true })
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+  }, [moveDrag, onOpenAgentMemory])
+
+  const beginLinkDrag = (agentId: string, event: React.PointerEvent) => {
     event.preventDefault()
     event.stopPropagation()
     const position = positionMap.get(agentId)
@@ -119,6 +204,22 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
       startY: position.y,
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
+    })
+  }
+
+  const beginMoveDrag = (agentId: string, event: React.PointerEvent) => {
+    if ((event.target as HTMLElement).closest('button')) return
+    const rect = containerRef.current?.getBoundingClientRect()
+    const position = positionMap.get(agentId)
+    if (!rect || !position) return
+    event.preventDefault()
+    setMoveDrag({
+      agentId,
+      offsetX: event.clientX - rect.left - position.x,
+      offsetY: event.clientY - rect.top - position.y,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
     })
   }
 
@@ -141,8 +242,11 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
   return (
     <div
       ref={containerRef}
-      className="relative w-full overflow-hidden rounded-xl border border-line bg-panel2/30"
-      style={{ height }}
+      className={cn(
+        'relative w-full overflow-hidden rounded-xl border border-line bg-panel2/30',
+        expanded && 'h-full flex-1',
+      )}
+      style={{ height: expanded ? '100%' : height }}
     >
       <div className="pointer-events-none absolute inset-0 bg-grid opacity-30" />
       <svg className="absolute inset-0 h-full w-full" width={width} height={height}>
@@ -203,10 +307,13 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
             key={agent.id}
             data-memory-agent={agent.id}
             className={cn(
-              'absolute flex -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border bg-panel px-1.5 py-1.5 shadow-sm',
+              'absolute flex -translate-x-1/2 -translate-y-1/2 cursor-grab flex-col rounded-lg border bg-panel px-2 py-1.5 shadow-sm active:cursor-grabbing',
               busy ? 'border-accent/40' : 'border-line',
+              moveDrag?.agentId === agent.id && 'z-10 shadow-md',
             )}
-            style={{ left: x, top: y, width: nodeWidth - 4 }}
+            style={{ left: x, top: y, width: nodeWidth - 6, touchAction: 'none' }}
+            onPointerDown={(event) => beginMoveDrag(agent.id, event)}
+            title="Drag to move. Click to read all memory."
           >
             <div className="flex items-center gap-1.5">
               <span className="relative shrink-0">
@@ -225,7 +332,7 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
               </div>
               <button
                 type="button"
-                onPointerDown={(event) => beginDrag(agent.id, event)}
+                onPointerDown={(event) => beginLinkDrag(agent.id, event)}
                 className="flex h-4.5 w-4.5 shrink-0 cursor-crosshair items-center justify-center rounded-full border border-dashed border-line-strong text-faint hover:border-accent hover:text-accent"
                 title="Drag to another agent to link memory"
                 aria-label={`Link ${agent.name} memory`}
@@ -259,6 +366,81 @@ function MemoryCanvas({ graph }: { graph: MemoryGraph }) {
   )
 }
 
+function MemoryDetailModal({
+  graph,
+  agentId,
+  onClose,
+}: {
+  graph: MemoryGraph
+  agentId: string
+  onClose: () => void
+}) {
+  const agent = graph.agents.find((entry) => entry.id === agentId)
+  const memories = graph.memories
+    .filter((memory) => memory.agentId === agentId)
+    .sort((a, b) => b.createdAt - a.createdAt)
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[60] bg-black/45 backdrop-blur-[1px]" onClick={onClose} />
+      <div className="fixed inset-x-4 top-1/2 z-[61] mx-auto flex max-h-[78vh] max-w-xl -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-2xl sm:inset-x-auto sm:left-1/2 sm:w-[560px] sm:-translate-x-1/2">
+        <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
+          <Avatar name={agent?.name || 'Agent'} color={agent?.color} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-semibold text-ink">
+              {agent?.name || 'Agent'} memory
+            </div>
+            <div className="text-[10px] text-faint">
+              {memories.length} recent note{memories.length === 1 ? '' : 's'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink"
+            aria-label="Close memory"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3">
+          {memories.length === 0 ? (
+            <div className="px-2 py-8 text-center text-[11.5px] text-faint">
+              No memory notes yet. Delegated task results are recorded automatically.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {memories.map((memory) => (
+                <div key={memory.id} className="rounded-lg border border-line bg-panel2/30 p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink">
+                      {memory.title || 'Memory note'}
+                    </span>
+                    <span className="shrink-0 text-[9.5px] text-faint">
+                      {relativeTime(memory.createdAt)}
+                    </span>
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-[11.5px] leading-relaxed text-muted">
+                    {memory.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
 export function MemoryPanel() {
   const graph = useAppStore((state) => state.memory)
   const loading = useAppStore((state) => state.memoryLoading)
@@ -266,19 +448,22 @@ export function MemoryPanel() {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   const openModal = useAppStore((state) => state.openModal)
   const [expanded, setExpanded] = useState(false)
+  const [selectedAgentId, setSelectedAgentId] = useState('')
 
   useEffect(() => {
     if (activeProjectId && !graph) void refreshMemory()
   }, [activeProjectId, graph, refreshMemory])
 
   useEffect(() => {
-    if (!expanded) return
+    if (!expanded && !selectedAgentId) return
     const handler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setExpanded(false)
+      if (event.key !== 'Escape') return
+      if (selectedAgentId) setSelectedAgentId('')
+      else if (expanded) setExpanded(false)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [expanded])
+  }, [expanded, selectedAgentId])
 
   if (loading && !graph) {
     return (
@@ -303,110 +488,148 @@ export function MemoryPanel() {
     )
   }
 
-  const content = (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] text-faint">
-          {graph.agents.length} agents · {graph.links.length} links · {graph.memories.length} notes
-        </span>
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
-          title={expanded ? 'Collapse memory graph' : 'Expand memory graph'}
-        >
-          {expanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-        </button>
-        <button
-          type="button"
-          onClick={() => void refreshMemory()}
-          className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
-          title="Refresh memory"
-        >
-          <RefreshCw className={cn('h-3 w-3', loading && 'spin')} />
-        </button>
-      </div>
+  const modal = selectedAgentId ? (
+    <MemoryDetailModal
+      graph={graph}
+      agentId={selectedAgentId}
+      onClose={() => setSelectedAgentId('')}
+    />
+  ) : null
 
-      <MemoryCanvas graph={graph} />
-
-      <p className="text-[9.5px] leading-relaxed text-faint">
-        Drag from the <Link2 className="inline h-2.5 w-2.5" /> handle on one agent to another to
-        share memory. Click × on a line to unlink.
-      </p>
-
-      <div>
-        <div className="mb-1.5 flex items-center gap-1.5">
-          <span className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-faint">
-            Recent memory
-          </span>
-          <span className="flex-1" />
-          <button
-            type="button"
-            onClick={() => openModal({ type: 'agent' })}
-            className="inline-flex items-center gap-0.5 text-[9.5px] font-medium text-accent hover:underline"
-          >
-            <Plus className="h-3 w-3" /> Agent
-          </button>
-        </div>
-        {graph.memories.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-line px-3 py-5 text-center text-[10px] text-faint">
-            Delegated task results become memory notes automatically.
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {graph.memories.slice(0, 8).map((memory) => {
-              const agent = graph.agents.find((entry) => entry.id === memory.agentId)
-              return (
-                <div key={memory.id} className="rounded-lg border border-line bg-panel px-2 py-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Avatar name={agent?.name || 'Agent'} color={agent?.color} size="xs" />
-                    <span className="min-w-0 flex-1 truncate text-[9.5px] font-medium text-ink">
-                      {agent?.name || 'Agent'}
-                      <span className="ml-1 font-normal text-faint">{memory.title}</span>
-                    </span>
-                    <span className="shrink-0 text-[8.5px] text-faint">
-                      {relativeTime(memory.createdAt)}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap text-[9.5px] leading-relaxed text-muted">
-                    {memory.content}
-                  </p>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+  const stats = (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-faint">
+        {graph.agents.length} agents · {graph.links.length} links · {graph.memories.length} notes
+      </span>
+      <span className="flex-1" />
+      <span className="hidden text-[9.5px] text-faint sm:inline">
+        drag tiles to move · link handle to connect
+      </span>
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
+        title={expanded ? 'Collapse memory graph' : 'Expand memory graph'}
+      >
+        {expanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+      </button>
+      <button
+        type="button"
+        onClick={() => void refreshMemory()}
+        className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
+        title="Refresh memory"
+      >
+        <RefreshCw className={cn('h-3 w-3', loading && 'spin')} />
+      </button>
     </div>
   )
 
-  if (!expanded) return content
+  if (expanded) {
+    return (
+      <>
+        <div className="fixed inset-0 z-50 flex flex-col bg-bg p-3 sm:p-5">
+          <div className="flex h-10 shrink-0 items-center gap-2">
+            <Brain className="h-4 w-4 text-accent" />
+            <span className="text-[14px] font-semibold text-ink">Agent memory</span>
+            <span className="text-[10px] text-faint">
+              {graph.agents.length} agents · {graph.links.length} links
+            </span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink"
+              aria-label="Collapse memory graph"
+              title="Collapse"
+            >
+              <Minimize2 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void refreshMemory()}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink"
+              title="Refresh memory"
+            >
+              <RefreshCw className={cn('h-4 w-4', loading && 'spin')} />
+            </button>
+          </div>
+          <div className="mt-2 flex min-h-0 flex-1">
+            <MemoryCanvas
+              graph={graph}
+              expanded
+              onOpenAgentMemory={setSelectedAgentId}
+            />
+          </div>
+          <div className="shrink-0 pt-2 text-[10px] text-faint">
+            Drag a tile to move it. Drag the dashed link handle onto another agent to share memory.
+            Click a tile to read all memory. Click × on a line to unlink.
+          </div>
+        </div>
+        {modal}
+      </>
+    )
+  }
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
-        onClick={() => setExpanded(false)}
-      />
-      <div className="fixed inset-3 z-50 mx-auto flex max-w-6xl flex-col rounded-xl border border-line bg-panel shadow-2xl sm:inset-6">
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
-          <Brain className="h-4 w-4 text-accent" />
-          <span className="text-[12px] font-semibold text-ink">Agent memory</span>
-          <span className="text-[10px] text-faint">{graph.agents.length} agents</span>
-          <span className="flex-1" />
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink"
-            aria-label="Collapse memory graph"
-            title="Collapse"
-          >
-            <Minimize2 className="h-4 w-4" />
-          </button>
+      <div className="space-y-3">
+        {stats}
+        <MemoryCanvas graph={graph} expanded={false} onOpenAgentMemory={setSelectedAgentId} />
+        <p className="text-[9.5px] leading-relaxed text-faint">
+          Drag the <Link2 className="inline h-2.5 w-2.5" /> handle onto another agent to share
+          memory. Click an agent to read all of its memory.
+        </p>
+
+        <div>
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <span className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-faint">
+              Recent memory
+            </span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => openModal({ type: 'agent' })}
+              className="inline-flex items-center gap-0.5 text-[9.5px] font-medium text-accent hover:underline"
+            >
+              <Plus className="h-3 w-3" /> Agent
+            </button>
+          </div>
+          {graph.memories.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-line px-3 py-5 text-center text-[10px] text-faint">
+              Delegated task results become memory notes automatically.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {graph.memories.slice(0, 8).map((memory) => {
+                const agent = graph.agents.find((entry) => entry.id === memory.agentId)
+                return (
+                  <button
+                    key={memory.id}
+                    type="button"
+                    onClick={() => setSelectedAgentId(memory.agentId)}
+                    className="w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-left transition-colors hover:border-accent/30"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Avatar name={agent?.name || 'Agent'} color={agent?.color} size="xs" />
+                      <span className="min-w-0 flex-1 truncate text-[9.5px] font-medium text-ink">
+                        {agent?.name || 'Agent'}
+                        <span className="ml-1 font-normal text-faint">{memory.title}</span>
+                      </span>
+                      <span className="shrink-0 text-[8.5px] text-faint">
+                        {relativeTime(memory.createdAt)}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap text-[9.5px] leading-relaxed text-muted">
+                      {memory.content}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
-        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">{content}</div>
       </div>
+      {modal}
     </>
   )
 }

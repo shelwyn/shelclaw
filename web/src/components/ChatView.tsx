@@ -172,7 +172,7 @@ function Hero() {
 
         {providers.length === 0 ? (
           <p className="mt-4 text-[10.5px] text-warn">
-            No harness connected yet. Add a local harness in Settings.
+            No harness connected yet. Add OpenCode in Settings.
           </p>
         ) : null}
       </div>

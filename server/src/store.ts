@@ -261,7 +261,7 @@ export function deleteProvider(providerId: string): boolean {
 
 export function ensureWorkspaceLayout(root: string): void {
   const absolute = path.resolve(root)
-  for (const folder of ['chats', 'agents', 'memory', 'memory/shared', 'embeddings']) {
+  for (const folder of ['chats', 'agents', 'memory', 'memory/shared', 'embeddings', 'runtime_files']) {
     fs.mkdirSync(path.join(absolute, folder), { recursive: true })
   }
 }
@@ -295,6 +295,7 @@ export function ensureProjectWorkspaces(): void {
     }
     try {
       ensureWorkspaceLayout(project.workspacePath)
+      backfillExternalArtifacts(project.id, project.workspacePath)
     } catch (err) {
       console.warn(`Workspace folder unavailable for project ${project.name}:`, err)
     }
@@ -1424,6 +1425,113 @@ export function listArtifacts(projectId: string): Artifact[] {
   }))
 
   return [...workspace, ...uploadArtifacts].sort((a, b) => b.modifiedAt - a.modifiedAt)
+}
+
+/** Register runtime_files that existed before artifact tracking was enabled. */
+export function syncRuntimeArtifacts(projectId: string, workspacePath: string): void {
+  if (!workspacePath) return
+  const runtimeDir = path.join(workspacePath, 'runtime_files')
+  if (!fs.existsSync(runtimeDir)) return
+  const known = new Set(
+    (db.prepare('SELECT path FROM artifacts WHERE project_id = ?').all(projectId) as Row[]).map(
+      (row) => s(row.path),
+    ),
+  )
+  const files: Array<{ path: string; name: string; size: number; modifiedAt: number }> = []
+  const walk = (directory: string) => {
+    if (files.length >= 800) return
+    let entries: fs.Dirent[] = []
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (files.length >= 800) return
+      const absolute = path.join(directory, entry.name)
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.git') continue
+        walk(absolute)
+        continue
+      }
+      if (!entry.isFile()) continue
+      try {
+        const stat = fs.statSync(absolute)
+        files.push({
+          path: path.relative(workspacePath, absolute).split(path.sep).join('/'),
+          name: entry.name,
+          size: stat.size,
+          modifiedAt: stat.mtimeMs,
+        })
+      } catch {
+        // Skip unreadable files.
+      }
+    }
+  }
+  walk(runtimeDir)
+  const missing = files.filter((file) => !known.has(file.path))
+  if (missing.length) {
+    recordArtifacts({ projectId, agentId: '', chatId: '', files: missing })
+  }
+}
+
+/**
+ * Older runs could write outputs outside the project (for example Downloads).
+ * Copy files mentioned in agent output into runtime_files so they are visible
+ * in the artifact index without touching the original file.
+ */
+export function backfillExternalArtifacts(projectId: string, workspacePath: string): void {
+  if (!workspacePath) return
+  const runtimeDir = path.join(workspacePath, 'runtime_files')
+  const root = path.resolve(workspacePath)
+  const rows = db
+    .prepare(
+      `SELECT m.content, m.created_at, c.id AS chat_id, c.agent_id
+       FROM messages m
+       JOIN chats c ON c.id = m.chat_id
+       WHERE c.project_id = ? AND m.role = 'assistant'
+       ORDER BY m.created_at ASC`,
+    )
+    .all(projectId) as Row[]
+  const copied: Array<{ path: string; name: string; size: number; modifiedAt: number }> = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const content = s(row.content)
+    const matches = content.matchAll(/(?:[A-Za-z]:\\|\/)[^\s"'`<>)]{2,}/g)
+    for (const match of matches) {
+      const candidate = match[0].replace(/[.,;:!?]+$/, '')
+      if (!path.isAbsolute(candidate) || seen.has(candidate)) continue
+      seen.add(candidate)
+      try {
+        if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) continue
+        const resolved = path.resolve(candidate)
+        if (resolved.startsWith(root + path.sep)) continue
+        const stat = fs.statSync(resolved)
+        if (stat.size > 50 * 1024 * 1024) continue
+        fs.mkdirSync(runtimeDir, { recursive: true })
+        const name = path.basename(resolved)
+        const destination = path.join(runtimeDir, name)
+        if (fs.existsSync(destination)) continue
+        fs.copyFileSync(resolved, destination)
+        const relative = path.relative(root, destination).split(path.sep).join('/')
+        copied.push({
+          path: relative,
+          name,
+          size: fs.statSync(destination).size,
+          modifiedAt: Date.now(),
+        })
+        recordArtifacts({
+          projectId,
+          agentId: s(row.agent_id),
+          chatId: s(row.chat_id),
+          files: [copied[copied.length - 1]],
+        })
+      } catch {
+        // Ignore unreadable paths mentioned in old messages.
+      }
+    }
+  }
+  syncRuntimeArtifacts(projectId, workspacePath)
 }
 
 /* --------------------------------- chat detail -------------------------------- */

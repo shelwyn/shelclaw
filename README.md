@@ -17,7 +17,7 @@ A local-first, project-first workspace for orchestrating **local agent harnesses
 - **Message queue per chat** — keep sending while an agent works. Messages are stored server-side and sent in order when the current run finishes. Different chats still run in parallel.
 - **Shared memory in the inspector** — open the Memory tab on the right, drag between agents to link their memory, and review recent notes without leaving the chat.
 - **Delete chats** — remove a conversation (and its sub-agent chats and uploads) from the sidebar or the chat header.
-- **Local harnesses only** — OpenCode server/CLI, Claude Code CLI, Pi CLI, or any custom local command. No cloud LLM endpoints to configure.
+- **OpenCode harnesses only** — connect to an OpenCode server or the local OpenCode CLI. No cloud LLM endpoints and no other harness types.
 - **Archive older chats** — hide finished conversations and their sub-agent trees without deleting them.
 - **Runs anywhere Node runs** — Node 24 + built-in SQLite, no native addons. Docker included for Mac, PC and Raspberry Pi.
 
@@ -25,7 +25,7 @@ A local-first, project-first workspace for orchestrating **local agent harnesses
 
 ## Quick start
 
-Requirements: **Node 24+** and at least one local harness (`opencode`, `claude`, `pi`, or a custom command).
+Requirements: **Node 24+** and an OpenCode installation (`opencode`), either as a local CLI or a running `opencode serve` instance.
 
 ```bash
 git clone <your-github-repo-url> opencodex
@@ -48,24 +48,11 @@ npm run dev
 The SQLite database lives in `./data/opencodex.db` by default. Set `DATA_DIR` to move it. Harness connections, projects, agents, chats, reports and memory all persist across restarts.
 
 1. Click **New project** and give it a name, brief and **required workspace folder**.
-2. Open **Settings → Connect Harness** and connect a harness.
+2. Open **Settings → Connect Harness** and connect OpenCode.
 3. Create agents from the project sidebar.
 4. Click an agent to chat with it, or start a **New chat** with the project Orchestrator.
 5. Attach files with the paperclip, drag-and-drop, or paste; then send.
 6. Click the gear on any agent (including the Orchestrator) to edit its system prompt and model. Use the **Memory** tab in the right inspector to link agents.
-
-### Demo without a real agent harness
-
-A deterministic local harness ships in `scripts/mock-harness.mjs`:
-
-1. Add a **Custom local harness**.
-2. Command: `/absolute/path/to/opencodex/scripts/mock-harness.mjs`
-3. Arguments: none
-4. Prompt transport: **As the final argument**
-5. **Test connection**, save.
-6. Create a project with two agents named **Researcher** and **Engineer**, then chat with the Orchestrator.
-
-It delegates, nests one more agent, writes agent reports and memory notes, and needs no model or network connection.
 
 ## Projects
 
@@ -93,9 +80,12 @@ A workspace folder is **required** when creating a project and there is no impli
   memory/<agentId>/notes.jsonl   memory notes for one agent
   memory/shared/links.json       memory-link graph
   embeddings/<agentId>/memory-index.jsonl
+  runtime_files/                 execution output from agents
 ```
 
 Uploads are capped at 25 MB each, up to 8 files per message. The folder must be writable by the server process. A folder cannot be moved after a project has uploads; create a new project instead.
+
+Every harness runs with `runtime_files` as its working directory. Agents are instructed to keep generated scripts, reports, exports and temporary files there; files mentioned outside the project are copied into `runtime_files` and indexed as artifacts.
 
 ## File attachments
 
@@ -125,6 +115,8 @@ Files created or edited by agents inside the project workspace appear in the **W
 ### Artifacts
 
 The inspector's **Files** tab is the project artifact index. It groups every uploaded file and every agent-created or agent-edited workspace file by the agent that produced it, with search and refresh. Click any artifact to preview it. New artifacts appear automatically when a run finishes.
+
+All execution output lives in `<workspace>/runtime_files`. Files an agent mentions outside the project (for example in Downloads) are copied into `runtime_files` so they appear in the artifact index; the original is left untouched. Existing runtime files are indexed automatically the next time the project opens.
 
 ## Message queue
 
@@ -182,7 +174,8 @@ Memory lives in the **right-hand inspector**. Open it with the brain icon next t
 - Memory is injected into prompts as "Shared memory", clearly separated from instructions.
 - Orchestrator memory shows up in the same graph as specialist memory.
 - Notes and links are mirrored into the project workspace (`memory/` and `embeddings/`).
-- Click the expand icon to open the graph in a large overlay; collapse it or press `Esc` to return to the inspector.
+- Click any agent tile (or a note in Recent memory) to open a modal with the agent's complete recent memory text.
+- Click the expand icon for a full-screen graph. Drag tiles to rearrange them, use the dashed handle to connect agents, and click a tile to read its memory. The expanded view focuses entirely on the graph; collapse it or press `Esc` to return.
 
 ![Agent memory graph](docs/screenshot-memory.png)
 
@@ -192,11 +185,8 @@ Memory lives in the **right-hand inspector**. Open it with the brain icon next t
 | --- | --- |
 | **OpenCode server** | Connects to a running `opencode serve` over HTTP using its URL and password. Models use `providerID/modelID`. |
 | **OpenCode CLI** | Runs `opencode run` locally with your OpenCode config and credentials. |
-| **Claude Code CLI** | Runs `claude -p` locally with your Claude Code login. |
-| **Pi CLI** | Runs `pi -p` locally in non-interactive text mode. |
-| **Custom local harness** | Runs any local executable that accepts a prompt argument or stdin and writes text to stdout. |
 
-Direct model APIs (OpenAI, Azure OpenAI, Anthropic, Ollama, LM Studio, etc.) are intentionally **not** supported. OpenCodex only orchestrates local agent processes.
+Direct model APIs (OpenAI, Azure OpenAI, Anthropic, Ollama, LM Studio, etc.) are intentionally **not** supported. OpenCodex only orchestrates OpenCode.
 
 ### Connecting to an OpenCode server
 
@@ -225,7 +215,7 @@ Use those in **Settings → Connect Harness → Add harness → OpenCode server*
    - SSH tunnel: `ssh -L 4096:127.0.0.1:4096 user@host`, then use `http://127.0.0.1:4096`
 2. **Server password** — paste the generated `server password …` value.
 3. **Test connection** → **Fetch models** → save.
-4. Optional: choose the **OpenCode agent** (`build`, `plan`, `general`, or a custom id) and a working directory.
+4. Optional: choose the **OpenCode agent** (`build`, `plan`, `general`, or a custom id).
 
 `0.0.0.0` is a bind address, not a connect address. OpenCodex rewrites it to `127.0.0.1`; use the machine's LAN IP when connecting from another device.
 
@@ -237,26 +227,7 @@ OPENCODE_PASSWORD='choose-a-strong-password' opencode serve --hostname 0.0.0.0 -
 
 OpenCodex authenticates over HTTP Basic auth (`opencode:<password>`) entirely server-side. Do not expose the OpenCode port to the public internet without TLS and network controls.
 
-Each run creates an OpenCode session titled `OpenCodex · …`. OpenCode's own tools run inside that session.
-
-### Pi and custom local harnesses
-
-The **Pi CLI** template runs:
-
-```bash
-pi -p --mode text -- <prompt>
-```
-
-It uses Pi's configured model unless you set a default model. The **Custom local harness** template exposes:
-
-- **Command** — executable on the server host (e.g. `my-agent`)
-- **Arguments** — one per line, placed before the prompt
-- **Prompt transport** — final argument, or stdin
-- **Model flag** — optional, e.g. `--model`; the selected model is appended
-- **Working directory** — optional
-- **Default model** — leave blank to use the harness default
-
-Harness output is streamed into the chat. If a command writes JSON, wrap it in a script that prints plain text.
+Each run creates an OpenCode session titled `OpenCodex · …`. OpenCode's own tools run inside that session. The session working directory is always the project's `runtime_files` folder.
 
 ### Model selection order
 
@@ -286,7 +257,6 @@ OpenCode server:
 ```jsonc
 {
   "agent": "build",
-  "workdir": "/path/to/project",
   "variant": "default",
   "autoApprove": true,
   "permissions": [
@@ -297,29 +267,17 @@ OpenCode server:
 
 `autoApprove` grants broad tool access. Enable it only for trusted workspaces.
 
-OpenCode CLI / Claude Code CLI:
+OpenCode CLI:
 
 ```jsonc
 {
   "command": "opencode",
-  "workdir": "/path/to/project",
   "args": ["--agent", "build"],
   "env": { "SOME_VAR": "value" }
 }
 ```
 
-Custom local harness / Pi:
-
-```jsonc
-{
-  "command": "pi",
-  "args": ["-p", "--mode", "text", "--"],
-  "promptMode": "arg",               // "arg" or "stdin"
-  "modelFlag": "--model",
-  "workdir": "/path/to/project",
-  "env": {}
-}
-```
+The harness working directory is not configurable; every run uses the project's `runtime_files` folder.
 
 ## How orchestration works
 
@@ -356,7 +314,7 @@ Guardrails: workspace **max depth** (0 disables delegation), **parallel agents**
 
 ```
 server/src
-  providers/     OpenCode server, OpenCode CLI, Claude Code, Pi/generic local harness
+  providers/     OpenCode server and OpenCode CLI adapters
   orchestrator/  delegation protocol, reports, recursive run engine, cancellation
   routes.ts      REST API + SSE
   store.ts       typed SQLite access (projects, agents, chats, memory)
@@ -429,7 +387,7 @@ rm .npmrc.local
 
 Multi-arch images build natively on Apple Silicon, x86 PCs and **64-bit** Raspberry Pi OS (`arm64`).
 
-**Harness binaries:** the image includes Node and the demo harness in `/app/scripts`, but not `opencode`, `claude` or `pi`. Either install them in a derived image, or run the harnesses on the host. For OpenCode server on the host, use `http://host.docker.internal:4096` on Docker Desktop or the host's LAN IP on Linux. For CLI harnesses, install the binaries inside the container and mount their credential/config directories.
+**Harness binaries:** the image includes Node but not `opencode`. Install it in a derived image, or run OpenCode on the host. For OpenCode server on the host, use `http://host.docker.internal:4096` on Docker Desktop or the host's LAN IP on Linux. For the OpenCode CLI, install the binary inside the container and mount its credential/config directories.
 
 ### Plain Node
 
@@ -468,7 +426,6 @@ WantedBy=multi-user.target
 | `DATA_DIR` | `./data` | SQLite location |
 | `APP_TOKEN` | empty | Optional bearer token gate for every API/SSE request |
 | `OPENCODE_BIN` | `opencode` | Default OpenCode executable |
-| `CLAUDE_BIN` | `claude` | Default Claude Code executable |
 | `LOG_LEVEL` | `warn` | Fastify log level |
 | `HOST_PORT` | `8787` | Docker Compose host port |
 | `NPMRC_PATH` | `.npmrc.docker` | npm config file used as a Docker build secret |
@@ -505,11 +462,11 @@ npm start          # serve both from one process
 npm run typecheck  # server + web
 ```
 
-The demo harness is `scripts/mock-harness.mjs`.
+The demo harness source remains in `scripts/mock-harness.mjs` for automated development tests.
 
 ## Current limits
 
-- **Local harnesses only** by design. OpenAI/Azure/Anthropic/Ollama/model endpoints are not exposed.
+- **OpenCode only** by design. Other harness types and cloud model endpoints are not exposed.
 - Each harness binary must be installed and executable on the server host (or inside the container).
 - A harness must follow the delegation protocol to delegate. If it refuses, it answers directly.
 - Agent reports and memory notes are automatic; they are not editable yet.

@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { relativeTime } from '../lib/format'
 import { useAppStore } from '../store'
-import type { PreviewPayload, PreviewTarget, WorkspaceFile } from '../types'
+import type { ChatFile, PreviewPayload, PreviewTarget, WorkspaceFile } from '../types'
 import { cn, EmptyState, Spinner } from './ui'
 
 function sizeLabel(bytes: number | undefined): string {
@@ -257,8 +257,6 @@ export function PreviewDrawer() {
   const openFilesPanel = useAppStore((state) => state.openFilesPanel)
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   const projects = useAppStore((state) => state.projects)
-  const detailFiles = useAppStore((state) => state.detail?.files)
-  const chat = useAppStore((state) => state.detail?.chat || null)
 
   const project = projects.find((entry) => entry.id === activeProjectId)
   const [payload, setPayload] = useState<PreviewPayload | null>(null)
@@ -267,6 +265,7 @@ export function PreviewDrawer() {
   const [blobUrl, setBlobUrl] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([])
+  const [projectUploads, setProjectUploads] = useState<ChatFile[]>([])
   const [filesLoading, setFilesLoading] = useState(false)
   const [filesError, setFilesError] = useState('')
   const [query, setQuery] = useState('')
@@ -289,13 +288,35 @@ export function PreviewDrawer() {
     let cancelled = false
     setFilesLoading(true)
     setFilesError('')
-    api
-      .workspaceFiles(activeProjectId)
-      .then((result) => {
-        if (!cancelled) setWorkspaceFiles(result.files)
-      })
-      .catch((err) => {
-        if (!cancelled) setFilesError(err instanceof Error ? err.message : String(err))
+    Promise.allSettled([api.workspaceFiles(activeProjectId), api.artifacts(activeProjectId)])
+      .then(([workspaceResult, artifactResult]) => {
+        if (cancelled) return
+        if (workspaceResult.status === 'fulfilled') {
+          setWorkspaceFiles(workspaceResult.value.files)
+        } else {
+          setFilesError(
+            workspaceResult.reason instanceof Error
+              ? workspaceResult.reason.message
+              : String(workspaceResult.reason),
+          )
+        }
+        if (artifactResult.status === 'fulfilled') {
+          setProjectUploads(
+            artifactResult.value.artifacts
+              .filter((artifact) => artifact.source === 'upload' && artifact.fileId)
+              .map((artifact) => ({
+                id: artifact.fileId,
+                projectId: artifact.projectId,
+                chatId: artifact.chatId,
+                messageId: '',
+                name: artifact.name,
+                storedPath: '',
+                mimeType: '',
+                size: artifact.size,
+                createdAt: artifact.createdAt,
+              })),
+          )
+        }
       })
       .finally(() => {
         if (!cancelled) setFilesLoading(false)
@@ -370,7 +391,7 @@ export function PreviewDrawer() {
     )
   }, [workspaceFiles, query])
 
-  const chatUploads = chat ? (detailFiles || []).filter((file) => file.chatId === chat.id) : []
+  const chatUploads = projectUploads
 
   if (!open) return null
 
@@ -463,7 +484,7 @@ export function PreviewDrawer() {
               {chatUploads.length ? (
                 <div className="mb-3">
                   <div className="px-1.5 pb-1 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-faint">
-                    Chat uploads
+                    Uploads
                   </div>
                   <div className="space-y-0.5">
                     {chatUploads.map((file) => (

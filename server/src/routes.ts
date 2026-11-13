@@ -53,6 +53,7 @@ import {
   removeQueuedMessage,
   safeProvider,
   setChatArchived,
+  syncRuntimeArtifacts,
   clearQueuedMessages,
   updateAgent,
   updateChat,
@@ -62,12 +63,7 @@ import {
 } from './store.js'
 import type { Provider, ProviderKind } from './types.js'
 import { now } from './util.js'
-const providerKind = z.enum([
-  'opencode-server',
-  'opencode',
-  'claude-code',
-  'local-harness',
-])
+const providerKind = z.enum(['opencode-server', 'opencode'])
 
 const providerInput = z.object({
   providerId: z.string().max(100).optional(),
@@ -551,6 +547,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string }
     const project = getProject(id)
     if (!project) throw new AppError('Project not found.', 404)
+    if (project.workspacePath) syncRuntimeArtifacts(project.id, project.workspacePath)
     return { artifacts: listArtifacts(id) }
   })
 

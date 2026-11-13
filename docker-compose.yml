@@ -1,0 +1,24 @@
+services:
+  opencodex:
+    build:
+      context: .
+      secrets:
+        - npmrc
+    ports:
+      - '${HOST_PORT:-8787}:8787'
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      DATA_DIR: /data
+      APP_TOKEN: ${APP_TOKEN:-}
+    volumes:
+      - opencodex-data:/data
+    restart: unless-stopped
+
+volumes:
+  opencodex-data:
+    name: opencodex-data
+
+secrets:
+  npmrc:
+    file: ${NPMRC_PATH:-.npmrc.docker}

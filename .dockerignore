@@ -1,0 +1,15 @@
+node_modules
+data
+dist
+.git
+.github
+docs
+.env
+.env.*
+!.env.example
+.npmrc
+.npmrc.*
+*.log
+*.tsbuildinfo
+.DS_Store
+/tmp

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+data/
+.env
+.env.*
+!.env.example
+*.local
+*.tsbuildinfo
+.npmrc.local
+.DS_Store
+npm-debug.log*
+coverage/

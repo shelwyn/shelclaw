@@ -77,7 +77,9 @@ A project is the top-level container. It owns:
 - a **project brief** injected into the root agent's prompt
 - a **workspace folder** for uploaded files, memory notes and embeddings
 
-Switch projects from the list at the top of the sidebar. Deleting a project deletes its agents and chats; the confirmation dialog warns you. Workspace folders are never deleted automatically — they belong to you.
+Switch projects from the sidebar. Each project is a collapsible row; the active project expands to show its Orchestrator, agents and chats directly underneath, and only one project is expanded at a time. Selecting another project moves the workspace focus to it.
+
+Hover a project row and click the trash icon to delete the project, its agents and its chats. Uploaded files for its chats are removed; the workspace folder itself is kept. You can also delete from project settings.
 
 ### Workspace folder
 

@@ -170,6 +170,7 @@ function ProjectRow({
   onSelect,
   onEdit,
   onMemory,
+  onDelete,
   memoryActive,
 }: {
   project: Project
@@ -179,6 +180,7 @@ function ProjectRow({
   onSelect: () => void
   onEdit: () => void
   onMemory: () => void
+  onDelete: () => void
   memoryActive: boolean
 }) {
   return (
@@ -191,17 +193,25 @@ function ProjectRow({
       <button
         type="button"
         onClick={onSelect}
-        className="flex min-w-0 flex-1 items-center gap-2.5 py-[7px] pl-2 text-left"
+        className="flex min-w-0 flex-1 items-center gap-1.5 py-[7px] pl-1.5 text-left"
         title={project.workspacePath}
+        aria-expanded={active}
       >
+        {active ? (
+          <ChevronDown className="h-3 w-3 shrink-0 text-faint" />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0 text-faint" />
+        )}
         <span
           className="h-2 w-2 shrink-0 rounded-full"
           style={{ backgroundColor: project.color || 'var(--accent)' }}
         />
         <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{project.name}</span>
-        <span className="shrink-0 text-[9.5px] tabular-nums text-faint">
-          {chatCount ? `${agentCount}a · ${chatCount}c` : ''}
-        </span>
+        {!active && chatCount ? (
+          <span className="shrink-0 text-[9.5px] tabular-nums text-faint">
+            {agentCount}a · {chatCount}c
+          </span>
+        ) : null}
       </button>
       {active ? (
         <div className="flex shrink-0 items-center gap-0.5">
@@ -228,6 +238,18 @@ function ProjectRow({
           </button>
         </div>
       ) : null}
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          onDelete()
+        }}
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint opacity-100 transition-opacity hover:bg-danger/10 hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+        aria-label={`Delete ${project.name}`}
+        title="Delete project"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
     </div>
   )
 }
@@ -322,6 +344,7 @@ export function Sidebar() {
     toggleTheme,
     goHome,
     deleteChat,
+    deleteProject,
   } = useAppStore(
     useShallow((state) => ({
       agents: state.agents,
@@ -349,12 +372,15 @@ export function Sidebar() {
       toggleTheme: state.toggleTheme,
       goHome: state.goHome,
       deleteChat: state.deleteChat,
+      deleteProject: state.deleteProject,
     })),
   )
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [deleteTarget, setDeleteTarget] = useState<Chat | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [projectDeleteTarget, setProjectDeleteTarget] = useState<Project | null>(null)
+  const [deletingProject, setDeletingProject] = useState(false)
   const memoryActive = inspectorOpen && inspectorTab === 'memory'
   const activeProject = projects.find((project) => project.id === activeProjectId)
   const projectAgents = useMemo(
@@ -440,6 +466,194 @@ export function Sidebar() {
     }
     openModal({ type: 'agent' })
   }
+
+  const renderActiveProject = () => (
+    <div className="mb-1 ml-[15px] border-l border-line/70 pb-1 pl-1.5">
+      {orchestrator ? (
+        <div className="mt-1 rounded-lg border border-line/80 bg-panel2/40 p-1">
+          <div className="flex items-center gap-2 px-1 py-1">
+            <button
+              type="button"
+              onClick={() => openAgent(orchestrator.id)}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              title="Chat with the Orchestrator"
+            >
+              <span className="relative">
+                <Avatar name="O" color={orchestrator.color} size="sm" />
+                {busyFor(orchestrator.id) ? (
+                  <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-panel bg-panel">
+                    <Spinner className="h-2 w-2 text-accent" />
+                  </span>
+                ) : null}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-[12px] font-semibold text-ink">
+                    {orchestrator.name}
+                  </span>
+                  <Badge tone="accent">plans</Badge>
+                </span>
+                <span className="block truncate text-[9.5px] text-faint">
+                  {busyFor(orchestrator.id)
+                    ? `working on ${busyFor(orchestrator.id)}`
+                    : 'researches, plans, coordinates'}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openAgentSettings(orchestrator.id)}
+              className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
+              aria-label="Orchestrator settings"
+              title="Orchestrator settings"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-between px-2 pb-1 pt-3">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-faint">
+          Agents
+        </span>
+        <button
+          type="button"
+          onClick={createAgent}
+          className="inline-flex h-5 w-5 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
+          aria-label="New agent"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {userAgents.length === 0 ? (
+        <div className="mx-1 rounded-lg border border-dashed border-line px-2 py-3 text-center">
+          <p className="text-[10.5px] leading-relaxed text-faint">
+            No agents yet. The Orchestrator can research and plan; add agents to delegate execution.
+          </p>
+          <button
+            type="button"
+            onClick={createAgent}
+            className="mt-1 text-[10.5px] font-medium text-accent hover:underline"
+          >
+            Create agent
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-0.5">
+          {visibleAgents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              busyTitle={busyFor(agent.id)}
+              activeChatId={activeChatId}
+              onOpen={() => openAgent(agent.id)}
+              onEdit={() => openAgentSettings(agent.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between px-2 pb-1 pt-3">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-faint">
+          Chats
+        </span>
+        <button
+          type="button"
+          onClick={createChat}
+          className="inline-flex h-5 w-5 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
+          aria-label="New chat"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {archivedView ? (
+        <div className="mb-1.5 flex items-center gap-1.5 rounded-lg border border-line bg-panel2/60 px-2 py-1.5">
+          <Archive className="h-3 w-3 text-faint" />
+          <span className="text-[11px] font-medium text-ink">Archived chats</span>
+          <span className="text-[10px] text-faint">{archivedCount}</span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => setArchivedView(false)}
+            className="text-[10px] font-medium text-accent hover:underline"
+          >
+            Back to active
+          </button>
+        </div>
+      ) : null}
+
+      {roots.length === 0 ? (
+        <EmptyState
+          icon={archivedView ? <Archive className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+          title={
+            search
+              ? 'No matching chats'
+              : archivedView
+                ? 'No archived chats'
+                : 'No chats yet'
+          }
+          description={
+            search
+              ? 'Try a different title or agent name.'
+              : archivedView
+                ? 'Older chats you archive will appear here.'
+                : 'The Orchestrator is ready. Start a conversation.'
+          }
+          action={
+            !search && !archivedView ? (
+              <Button size="sm" variant="secondary" onClick={createChat}>
+                <Plus className="h-3.5 w-3.5" /> New chat
+              </Button>
+            ) : undefined
+          }
+          className="py-6"
+        />
+      ) : (
+        <div className="space-y-0.5">
+          {roots.map((chat) => (
+            <ChatBranch
+              key={chat.id}
+              chat={chat}
+              depth={0}
+              childrenByParent={childrenByParent}
+              agentMap={agentMap}
+              activeChatId={activeChatId}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              openChat={(id) => void openChat(id)}
+              onDelete={setDeleteTarget}
+            />
+          ))}
+        </div>
+      )}
+
+      {!archivedView && archivedCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => setArchivedView(true)}
+          className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-muted transition-colors hover:bg-panel2 hover:text-ink"
+        >
+          <Archive className="h-3.5 w-3.5" />
+          Archived chats
+          <span className="flex-1" />
+          <span className="text-[10px] text-faint">{archivedCount}</span>
+        </button>
+      ) : null}
+      {archivedView ? (
+        <button
+          type="button"
+          onClick={() => setArchivedView(false)}
+          className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-muted transition-colors hover:bg-panel2 hover:text-ink"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to active chats
+        </button>
+      ) : null}
+    </div>
+  )
 
   return (
     <>
@@ -540,224 +754,36 @@ export function Sidebar() {
               }
             />
           ) : (
-            <div className="max-h-[148px] space-y-0.5 overflow-y-auto scroll-thin">
+            <div className="space-y-0.5">
               {projects.map((project) => (
-                <ProjectRow
-                  key={project.id}
-                  project={project}
-                  active={project.id === activeProjectId}
-                  agentCount={
-                    agents.filter(
-                      (agent) => agent.projectId === project.id && !agent.isOrchestrator,
-                    ).length
-                  }
-                  chatCount={
-                    chats.filter(
-                      (chat) =>
-                        chat.projectId === project.id &&
-                        !chat.parentChatId &&
-                        !chat.archivedAt,
-                    ).length
-                  }
-                  onSelect={() => setActiveProject(project.id)}
-                  onEdit={() => openModal({ type: 'project', id: project.id })}
-                  onMemory={() => void openMemory(project.id)}
-                  memoryActive={project.id === activeProjectId && memoryActive}
-                />
+                <div key={project.id}>
+                  <ProjectRow
+                    project={project}
+                    active={project.id === activeProjectId}
+                    agentCount={
+                      agents.filter(
+                        (agent) => agent.projectId === project.id && !agent.isOrchestrator,
+                      ).length
+                    }
+                    chatCount={
+                      chats.filter(
+                        (chat) =>
+                          chat.projectId === project.id &&
+                          !chat.parentChatId &&
+                          !chat.archivedAt,
+                      ).length
+                    }
+                    onSelect={() => setActiveProject(project.id)}
+                    onEdit={() => openModal({ type: 'project', id: project.id })}
+                    onMemory={() => void openMemory(project.id)}
+                    onDelete={() => setProjectDeleteTarget(project)}
+                    memoryActive={project.id === activeProjectId && memoryActive}
+                  />
+                  {project.id === activeProjectId ? renderActiveProject() : null}
+                </div>
               ))}
             </div>
           )}
-
-          {activeProject ? (
-            <>
-              <div className="mx-2 my-2 border-t border-line" />
-
-              {orchestrator ? (
-                <div className="mt-1 rounded-lg border border-line/80 bg-panel2/40 p-1">
-                  <div className="flex items-center gap-2 px-1 py-1">
-                    <button
-                      type="button"
-                      onClick={() => openAgent(orchestrator.id)}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      title="Chat with the Orchestrator"
-                    >
-                      <span className="relative">
-                        <Avatar name="O" color={orchestrator.color} size="sm" />
-                        {busyFor(orchestrator.id) ? (
-                          <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-panel bg-panel">
-                            <Spinner className="h-2 w-2 text-accent" />
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
-                          <span className="truncate text-[12px] font-semibold text-ink">
-                            {orchestrator.name}
-                          </span>
-                          <Badge tone="accent">plans</Badge>
-                        </span>
-                        <span className="block truncate text-[9.5px] text-faint">
-                          {busyFor(orchestrator.id)
-                            ? `working on ${busyFor(orchestrator.id)}`
-                            : 'researches, plans, coordinates'}
-                        </span>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openAgentSettings(orchestrator.id)}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
-                      aria-label="Orchestrator settings"
-                      title="Orchestrator settings"
-                    >
-                      <Settings className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="flex items-center justify-between px-2 pb-1 pt-3">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-faint">
-                  Agents
-                </span>
-                <button
-                  type="button"
-                  onClick={createAgent}
-                  className="inline-flex h-5 w-5 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
-                  aria-label="New agent"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              {userAgents.length === 0 ? (
-                <div className="mx-1 rounded-lg border border-dashed border-line px-2 py-3 text-center">
-                  <p className="text-[10.5px] leading-relaxed text-faint">
-                    No agents yet. The Orchestrator can research and plan; add agents to delegate
-                    execution.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={createAgent}
-                    className="mt-1 text-[10.5px] font-medium text-accent hover:underline"
-                  >
-                    Create agent
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-0.5">
-                  {visibleAgents.map((agent) => (
-                    <AgentRow
-                      key={agent.id}
-                      agent={agent}
-                      busyTitle={busyFor(agent.id)}
-                      activeChatId={activeChatId}
-                      onOpen={() => openAgent(agent.id)}
-                      onEdit={() => openAgentSettings(agent.id)}
-                    />
-                  ))}
-                </div>
-              )}
-
-              <div className="flex items-center justify-between px-2 pb-1 pt-3">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-faint">
-                  Chats
-                </span>
-                <button
-                  type="button"
-                  onClick={createChat}
-                  className="inline-flex h-5 w-5 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
-                  aria-label="New chat"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              {archivedView ? (
-                <div className="mb-1.5 flex items-center gap-1.5 rounded-lg border border-line bg-panel2/60 px-2 py-1.5">
-                  <Archive className="h-3 w-3 text-faint" />
-                  <span className="text-[11px] font-medium text-ink">Archived chats</span>
-                  <span className="text-[10px] text-faint">{archivedCount}</span>
-                  <span className="flex-1" />
-                  <button
-                    type="button"
-                    onClick={() => setArchivedView(false)}
-                    className="text-[10px] font-medium text-accent hover:underline"
-                  >
-                    Back to active
-                  </button>
-                </div>
-              ) : null}
-
-              {roots.length === 0 ? (
-                <EmptyState
-                  icon={archivedView ? <Archive className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
-                  title={
-                    search
-                      ? 'No matching chats'
-                      : archivedView
-                        ? 'No archived chats'
-                        : 'No chats yet'
-                  }
-                  description={
-                    search
-                      ? 'Try a different title or agent name.'
-                      : archivedView
-                        ? 'Older chats you archive will appear here.'
-                        : 'The Orchestrator is ready. Start a conversation.'
-                  }
-                  action={
-                    !search && !archivedView ? (
-                      <Button size="sm" variant="secondary" onClick={createChat}>
-                        <Plus className="h-3.5 w-3.5" /> New chat
-                      </Button>
-                    ) : undefined
-                  }
-                  className="py-6"
-                />
-              ) : (
-                <div className="space-y-0.5">
-                  {roots.map((chat) => (
-                    <ChatBranch
-                      key={chat.id}
-                      chat={chat}
-                      depth={0}
-                      childrenByParent={childrenByParent}
-                      agentMap={agentMap}
-                      activeChatId={activeChatId}
-                      expanded={expanded}
-                      setExpanded={setExpanded}
-                      openChat={(id) => void openChat(id)}
-                      onDelete={setDeleteTarget}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {!archivedView && archivedCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => setArchivedView(true)}
-                  className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-muted transition-colors hover:bg-panel2 hover:text-ink"
-                >
-                  <Archive className="h-3.5 w-3.5" />
-                  Archived chats
-                  <span className="flex-1" />
-                  <span className="text-[10px] text-faint">{archivedCount}</span>
-                </button>
-              ) : null}
-              {archivedView ? (
-                <button
-                  type="button"
-                  onClick={() => setArchivedView(false)}
-                  className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-muted transition-colors hover:bg-panel2 hover:text-ink"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back to active chats
-                </button>
-              ) : null}
-            </>
-          ) : null}
         </div>
 
         <div className="border-t border-line px-2 py-2">
@@ -805,6 +831,27 @@ export function Sidebar() {
           await deleteChat(deleteTarget.id)
           setDeleting(false)
           setDeleteTarget(null)
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(projectDeleteTarget)}
+        title="Delete project?"
+        message={
+          projectDeleteTarget
+            ? `"${projectDeleteTarget.name}" and all of its agents and chats will be permanently deleted. Uploaded files for its chats are removed. The workspace folder itself is kept.`
+            : ''
+        }
+        loading={deletingProject}
+        onClose={() => {
+          if (!deletingProject) setProjectDeleteTarget(null)
+        }}
+        onConfirm={async () => {
+          if (!projectDeleteTarget) return
+          setDeletingProject(true)
+          await deleteProject(projectDeleteTarget.id)
+          setDeletingProject(false)
+          setProjectDeleteTarget(null)
         }}
       />
     </>

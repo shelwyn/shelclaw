@@ -106,6 +106,7 @@ interface AppState {
   newChat: (opts?: { agentId?: string; projectId?: string; title?: string }) => Promise<string | null>
   openAgentChat: (agentId: string) => Promise<string | null>
   deleteChat: (id: string) => Promise<void>
+  deleteProject: (id: string) => Promise<void>
   send: (content: string, fileIds?: string[]) => Promise<boolean>
   removeQueuedMessage: (id: string) => Promise<void>
   stop: () => Promise<void>
@@ -673,6 +674,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         window.history.replaceState(null, '', window.location.pathname)
       }
       void get().refresh()
+    } catch (err) {
+      pushToast('error', errorText(err))
+    }
+  },
+
+  deleteProject: async (id: string) => {
+    const wasActive = get().activeProjectId === id
+    try {
+      await api.deleteProject(id)
+      await get().refresh()
+      if (wasActive) {
+        const remaining = get().projects
+        if (remaining[0]) get().setActiveProject(remaining[0].id)
+        else {
+          get().setActiveProject('')
+          get().goHome()
+        }
+      }
+      pushToast('success', 'Project deleted.')
     } catch (err) {
       pushToast('error', errorText(err))
     }

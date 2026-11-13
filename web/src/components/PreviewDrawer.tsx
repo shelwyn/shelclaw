@@ -257,7 +257,7 @@ export function PreviewDrawer() {
   const openFilesPanel = useAppStore((state) => state.openFilesPanel)
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   const projects = useAppStore((state) => state.projects)
-  const detailFiles = useAppStore((state) => state.detail?.files || [])
+  const detailFiles = useAppStore((state) => state.detail?.files)
   const chat = useAppStore((state) => state.detail?.chat || null)
 
   const project = projects.find((entry) => entry.id === activeProjectId)
@@ -370,7 +370,7 @@ export function PreviewDrawer() {
     )
   }, [workspaceFiles, query])
 
-  const chatUploads = chat ? detailFiles.filter((file) => file.chatId === chat.id) : []
+  const chatUploads = chat ? (detailFiles || []).filter((file) => file.chatId === chat.id) : []
 
   if (!open) return null
 

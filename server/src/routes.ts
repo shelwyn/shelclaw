@@ -1,5 +1,7 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { bus } from './bus.js'
@@ -10,6 +12,7 @@ import { orchestrator } from './orchestrator/engine.js'
 import { discoverModels, PROVIDER_KINDS, testProvider } from './providers/index.js'
 import {
   activeRuns,
+  chatUploadDir,
   createAgent,
   createAgentLink,
   createChat,
@@ -18,19 +21,23 @@ import {
   deleteAgent,
   deleteAgentLink,
   deleteChat,
+  deleteChatFile,
   deleteProject,
   deleteProvider,
   ensureProjectOrchestrator,
   getAgent,
   getChat,
   getChatDetail,
+  getChatFile,
   getMemoryGraph,
   getOrCreateDirectChat,
   getOrchestrator,
   getProject,
   getProvider,
   getSettings,
+  insertChatFile,
   listAgents,
+  listChatFiles,
   listChats,
   listProjects,
   listSafeProviders,
@@ -67,6 +74,7 @@ const projectInput = z.object({
   name: z.string().min(1).max(120).optional(),
   description: z.string().max(4000).optional(),
   systemPrompt: z.string().max(30000).optional(),
+  workspacePath: z.string().max(2000).optional(),
   color: z.string().max(30).optional(),
 })
 
@@ -452,6 +460,65 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true }
   })
 
+  app.get('/api/chats/:id/files', async (req) => {
+    const { id } = req.params as { id: string }
+    if (!getChat(id)) throw new AppError('Chat not found.', 404)
+    return { files: listChatFiles(id) }
+  })
+
+  app.post('/api/chats/:id/files', async (req) => {
+    const { id } = req.params as { id: string }
+    const chat = getChat(id)
+    if (!chat) throw new AppError('Chat not found.', 404)
+    if (!chat.projectId) throw new AppError('Chat is not attached to a project.', 400)
+    const upload = await req.file()
+    if (!upload) throw new AppError('No file was uploaded.', 400)
+    const original = path.basename(upload.filename || 'file')
+    const safeName = original.replace(/[^\w.\- ()]/g, '_').slice(0, 160) || 'file'
+    const fileId = `file_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`
+    const directory = chatUploadDir(chat.projectId, id)
+    const storedPath = path.join(directory, `${fileId}-${safeName}`)
+    try {
+      await pipeline(upload.file, fs.createWriteStream(storedPath))
+      if (upload.file.truncated) {
+        fs.rmSync(storedPath, { force: true })
+        throw new AppError('File is too large (limit 25 MB).', 413)
+      }
+      const stat = fs.statSync(storedPath)
+      return insertChatFile({
+        id: fileId,
+        projectId: chat.projectId,
+        chatId: id,
+        name: original,
+        storedPath,
+        mimeType: upload.mimetype || 'application/octet-stream',
+        size: stat.size,
+      })
+    } catch (err) {
+      fs.rmSync(storedPath, { force: true })
+      throw err
+    }
+  })
+
+  app.get('/api/files/:id', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const file = getChatFile(id)
+    if (!file) throw new AppError('File not found.', 404)
+    if (!fs.existsSync(file.storedPath)) throw new AppError('File is missing from the workspace.', 404)
+    reply.header('content-type', file.mimeType || 'application/octet-stream')
+    reply.header(
+      'content-disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+    )
+    return reply.send(fs.createReadStream(file.storedPath))
+  })
+
+  app.delete('/api/files/:id', async (req) => {
+    const { id } = req.params as { id: string }
+    if (!deleteChatFile(id)) throw new AppError('File not found.', 404)
+    return { ok: true }
+  })
+
   app.post('/api/chats/:id/messages', async (req) => {
     const { id } = req.params as { id: string }
     const body = parse(
@@ -460,6 +527,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         agentId: z.string().max(100).optional(),
         providerId: z.string().max(100).optional(),
         model: z.string().max(300).optional(),
+        fileIds: z.array(z.string().max(100)).max(8).optional(),
       }),
       req.body,
     )

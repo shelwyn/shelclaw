@@ -22,7 +22,7 @@ export type ModalState =
   | { type: 'project'; id?: string }
   | null
 
-export type MainView = 'chat' | 'memory'
+export type InspectorTab = 'orchestration' | 'memory'
 
 export interface Toast {
   id: string
@@ -83,7 +83,7 @@ interface AppState {
   sending: boolean
 
   activeProjectId: string
-  mainView: MainView
+  inspectorTab: InspectorTab
   memory: MemoryGraph | null
   memoryLoading: boolean
   search: string
@@ -106,13 +106,14 @@ interface AppState {
   newChat: (opts?: { agentId?: string; projectId?: string; title?: string }) => Promise<string | null>
   openAgentChat: (agentId: string) => Promise<string | null>
   deleteChat: (id: string) => Promise<void>
-  send: (content: string) => Promise<boolean>
+  send: (content: string, fileIds?: string[]) => Promise<boolean>
   stop: () => Promise<void>
   updateChat: (patch: Partial<Chat>) => Promise<void>
   selectAgent: (agentId: string) => Promise<void>
   selectModel: (providerId: string, model: string) => Promise<void>
 
   setActiveProject: (projectId: string) => void
+  setInspectorTab: (tab: InspectorTab) => void
   openMemory: (projectId?: string) => Promise<void>
   refreshMemory: () => Promise<void>
   createMemoryLink: (agentA: string, agentB: string) => Promise<void>
@@ -135,6 +136,7 @@ const emptyDetail = (chat: Chat): ChatDetail => ({
   messages: [],
   tasks: [],
   runs: [],
+  files: [],
   orchestrationRunId: '',
   activeRunId: '',
 })
@@ -227,7 +229,7 @@ function handleEvent(event: BusEvent): void {
       }
       if (message.role === 'agent') {
         scheduleRefresh(250)
-        if (state.mainView === 'memory') void state.refreshMemory()
+        if (state.inspectorTab === 'memory') void state.refreshMemory()
         const meta = (message.metadata || {}) as Record<string, unknown>
         if (state.activeChatId !== message.chatId) {
           pushToast(
@@ -328,7 +330,7 @@ function handleEvent(event: BusEvent): void {
       break
 
     case 'memory.changed':
-      if (state.mainView === 'memory') void state.refreshMemory()
+      if (state.inspectorTab === 'memory') void state.refreshMemory()
       break
 
     case 'run.created': {
@@ -420,7 +422,7 @@ async function doInit(): Promise<void> {
       data.projects[0]?.id ||
       ''
 
-    useAppStore.setState({ activeProjectId: projectId, mainView: 'chat' })
+    useAppStore.setState({ activeProjectId: projectId })
     if (projectId) {
       try {
         localStorage.setItem('ocx.project', projectId)
@@ -480,7 +482,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sending: false,
 
   activeProjectId: '',
-  mainView: 'chat',
+  inspectorTab: 'orchestration',
   memory: null,
   memoryLoading: false,
   search: '',
@@ -537,7 +539,7 @@ export const useAppStore = create<AppState>((set, get) => ({
                 : state.detail,
         }
       })
-      if (get().mainView === 'memory') void get().refreshMemory()
+      if (get().inspectorTab === 'memory') void get().refreshMemory()
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         set({ needsAuth: true, ready: false })
@@ -562,7 +564,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeChatId: id,
       loadingChat: true,
       sidebarOpen: false,
-      mainView: 'chat',
       ...(known ? { activeProjectId: known.projectId } : {}),
     })
     window.history.replaceState(null, '', `#/chat/${id}`)
@@ -583,7 +584,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   goHome: () => {
-    set({ activeChatId: '', detail: null, loadingChat: false, sidebarOpen: false, mainView: 'chat' })
+    set({ activeChatId: '', detail: null, loadingChat: false, sidebarOpen: false })
     window.history.replaceState(null, '', window.location.pathname)
   },
 
@@ -607,7 +608,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         activeProjectId: chat.projectId,
         detail: emptyDetail(chat),
         loadingChat: false,
-        mainView: 'chat',
         archivedView: false,
         sidebarOpen: false,
       }))
@@ -630,7 +630,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((current) => ({
         chats: upsertById(current.chats, chat),
         activeProjectId: chat.projectId,
-        mainView: 'chat',
         archivedView: false,
         sidebarOpen: false,
       }))
@@ -669,7 +668,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  send: async (content: string) => {
+  send: async (content: string, fileIds?: string[]) => {
     const state = get()
     const chatId = state.activeChatId
     if (!chatId) return false
@@ -686,6 +685,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         agentId: chat.agentId,
         providerId: chat.providerId,
         model: chat.model,
+        fileIds: fileIds?.length ? fileIds : undefined,
       })
       set((current) => ({ drafts: { ...current.drafts, [chatId]: '' } }))
       return true
@@ -741,7 +741,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveProject: (projectId) => {
     const state = get()
     if (state.activeProjectId === projectId) {
-      set({ mainView: 'chat', sidebarOpen: false, archivedView: false })
+      set({ sidebarOpen: false, archivedView: false })
       return
     }
     set({
@@ -749,10 +749,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeChatId: '',
       detail: null,
       loadingChat: false,
-      mainView: 'chat',
       archivedView: false,
       search: '',
       sidebarOpen: false,
+      memory: null,
     })
     try {
       localStorage.setItem('ocx.project', projectId)
@@ -760,6 +760,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       // ignore
     }
     window.history.replaceState(null, '', window.location.pathname)
+    if (get().inspectorOpen && get().inspectorTab === 'memory') void get().refreshMemory()
+  },
+
+  setInspectorTab: (inspectorTab) => {
+    set({ inspectorTab, inspectorOpen: true, sidebarOpen: false })
+    if (inspectorTab === 'memory' && !get().memory) void get().refreshMemory()
   },
 
   openMemory: async (projectId) => {
@@ -769,7 +775,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const sameProject = state.activeProjectId === id
     set({
       activeProjectId: id,
-      mainView: 'memory',
+      inspectorTab: 'memory',
+      inspectorOpen: true,
       ...(sameProject ? {} : { activeChatId: '', detail: null }),
       archivedView: false,
       sidebarOpen: false,
@@ -831,7 +838,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         archived &&
         (state.activeChatId === id || isDescendantOf(state.chats, state.activeChatId, id))
       if (shouldLeave) {
-        set({ activeChatId: '', detail: null, loadingChat: false, mainView: 'chat' })
+        set({ activeChatId: '', detail: null, loadingChat: false })
         window.history.replaceState(null, '', window.location.pathname)
       }
       await get().refresh()

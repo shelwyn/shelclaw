@@ -13,6 +13,7 @@ import {
   Search,
   Settings,
   Sun,
+  Trash2,
   X,
 } from 'lucide-react'
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
@@ -20,7 +21,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../store'
 import type { Agent, Chat, Project } from '../types'
 import { relativeTime } from '../lib/format'
-import { Avatar, Badge, Button, cn, EmptyState, Spinner } from './ui'
+import { Avatar, Badge, Button, cn, ConfirmDialog, EmptyState, Spinner } from './ui'
 
 function ChatRow({
   chat,
@@ -28,41 +29,58 @@ function ChatRow({
   agent,
   active,
   onClick,
+  onDelete,
 }: {
   chat: Chat
   depth: number
   agent?: Agent
   active: boolean
   onClick: () => void
+  onDelete: () => void
 }) {
   const running = chat.status === 'running'
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={cn(
-        'group flex w-full items-center gap-2 rounded-lg py-[7px] pr-2 text-left transition-colors',
-        depth === 0 ? 'pl-2' : 'pl-2',
+        'group flex w-full items-center gap-1 rounded-lg pr-1 transition-colors',
         active ? 'bg-accent-soft text-ink' : 'text-muted hover:bg-panel2 hover:text-ink',
       )}
-      style={depth > 0 ? { paddingLeft: 10 + depth * 14 } : undefined}
-      title={chat.title}
+      style={depth > 0 ? { paddingLeft: 4 + depth * 12 } : undefined}
     >
-      {depth > 0 ? (
-        <CornerDownRight className="h-3 w-3 shrink-0 text-faint" />
-      ) : running ? (
-        <Spinner className="h-3.5 w-3.5 shrink-0 text-accent" />
-      ) : (
-        <span
-          className="h-1.5 w-1.5 shrink-0 rounded-full"
-          style={{ backgroundColor: agent?.color || 'var(--faint)' }}
-        />
-      )}
-      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{chat.title}</span>
-      <span className="shrink-0 text-[10px] tabular-nums text-faint">
-        {running ? 'live' : relativeTime(chat.lastMessageAt)}
-      </span>
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center gap-2 py-[7px] pl-1.5 text-left"
+        title={chat.title}
+      >
+        {depth > 0 ? (
+          <CornerDownRight className="h-3 w-3 shrink-0 text-faint" />
+        ) : running ? (
+          <Spinner className="h-3.5 w-3.5 shrink-0 text-accent" />
+        ) : (
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full"
+            style={{ backgroundColor: agent?.color || 'var(--faint)' }}
+          />
+        )}
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{chat.title}</span>
+        <span className="shrink-0 text-[10px] tabular-nums text-faint">
+          {running ? 'live' : relativeTime(chat.lastMessageAt)}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          onDelete()
+        }}
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint opacity-100 transition-opacity hover:bg-danger/10 hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+        aria-label={`Delete ${chat.title}`}
+        title="Delete chat"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
+    </div>
   )
 }
 
@@ -75,6 +93,7 @@ function ChatBranch({
   expanded,
   setExpanded,
   openChat,
+  onDelete,
 }: {
   chat: Chat
   depth: number
@@ -84,6 +103,7 @@ function ChatBranch({
   expanded: Record<string, boolean>
   setExpanded: Dispatch<SetStateAction<Record<string, boolean>>>
   openChat: (id: string) => void
+  onDelete: (chat: Chat) => void
 }) {
   const children = childrenByParent.get(chat.id) || []
   const isExpanded = expanded[chat.id] ?? true
@@ -97,6 +117,7 @@ function ChatBranch({
         agent={agentMap.get(chat.agentId)}
         active={chat.id === activeChatId}
         onClick={() => openChat(chat.id)}
+        onDelete={() => onDelete(chat)}
       />
       {children.length ? (
         <div className="relative ml-[15px] border-l border-line/70 pl-1">
@@ -111,6 +132,7 @@ function ChatBranch({
               expanded={expanded}
               setExpanded={setExpanded}
               openChat={openChat}
+              onDelete={onDelete}
             />
           ))}
           {children.length > shown.length ? (
@@ -146,31 +168,67 @@ function ProjectRow({
   agentCount,
   chatCount,
   onSelect,
+  onEdit,
+  onMemory,
+  memoryActive,
 }: {
   project: Project
   active: boolean
   agentCount: number
   chatCount: number
   onSelect: () => void
+  onEdit: () => void
+  onMemory: () => void
+  memoryActive: boolean
 }) {
   return (
-    <button
-      type="button"
-      onClick={onSelect}
+    <div
       className={cn(
-        'group flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-left transition-colors',
+        'group flex w-full items-center gap-1 rounded-lg pr-1 transition-colors',
         active ? 'bg-accent-soft text-ink' : 'text-muted hover:bg-panel2 hover:text-ink',
       )}
     >
-      <span
-        className="h-2 w-2 shrink-0 rounded-full"
-        style={{ backgroundColor: project.color || 'var(--accent)' }}
-      />
-      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{project.name}</span>
-      <span className="shrink-0 text-[9.5px] tabular-nums text-faint">
-        {chatCount ? `${agentCount}a · ${chatCount}c` : ''}
-      </span>
-    </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex min-w-0 flex-1 items-center gap-2.5 py-[7px] pl-2 text-left"
+        title={project.workspacePath}
+      >
+        <span
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ backgroundColor: project.color || 'var(--accent)' }}
+        />
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{project.name}</span>
+        <span className="shrink-0 text-[9.5px] tabular-nums text-faint">
+          {chatCount ? `${agentCount}a · ${chatCount}c` : ''}
+        </span>
+      </button>
+      {active ? (
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
+            aria-label="Project settings"
+            title={`Project settings · ${project.workspacePath}`}
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onClick={onMemory}
+            className={cn(
+              'inline-flex h-6 w-6 items-center justify-center rounded',
+              memoryActive ? 'text-accent' : 'text-faint hover:bg-panel hover:text-ink',
+            )}
+            aria-label="Memory links"
+            title="Memory links"
+          >
+            <Brain className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -245,7 +303,8 @@ export function Sidebar() {
     settings,
     activeChatId,
     activeProjectId,
-    mainView,
+    inspectorTab,
+    inspectorOpen,
     search,
     archivedView,
     sidebarOpen,
@@ -262,6 +321,7 @@ export function Sidebar() {
     openModal,
     toggleTheme,
     goHome,
+    deleteChat,
   } = useAppStore(
     useShallow((state) => ({
       agents: state.agents,
@@ -270,7 +330,8 @@ export function Sidebar() {
       settings: state.settings,
       activeChatId: state.activeChatId,
       activeProjectId: state.activeProjectId,
-      mainView: state.mainView,
+      inspectorTab: state.inspectorTab,
+      inspectorOpen: state.inspectorOpen,
       search: state.search,
       archivedView: state.archivedView,
       sidebarOpen: state.sidebarOpen,
@@ -287,10 +348,14 @@ export function Sidebar() {
       openModal: state.openModal,
       toggleTheme: state.toggleTheme,
       goHome: state.goHome,
+      deleteChat: state.deleteChat,
     })),
   )
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [deleteTarget, setDeleteTarget] = useState<Chat | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const memoryActive = inspectorOpen && inspectorTab === 'memory'
   const activeProject = projects.find((project) => project.id === activeProjectId)
   const projectAgents = useMemo(
     () => agents.filter((agent) => agent.projectId === activeProjectId),
@@ -496,6 +561,9 @@ export function Sidebar() {
                     ).length
                   }
                   onSelect={() => setActiveProject(project.id)}
+                  onEdit={() => openModal({ type: 'project', id: project.id })}
+                  onMemory={() => void openMemory(project.id)}
+                  memoryActive={project.id === activeProjectId && memoryActive}
                 />
               ))}
             </div>
@@ -504,39 +572,6 @@ export function Sidebar() {
           {activeProject ? (
             <>
               <div className="mx-2 my-2 border-t border-line" />
-
-              <div className="flex items-center gap-2 px-2 pb-1">
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: activeProject.color }}
-                />
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink">
-                  {activeProject.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => openModal({ type: 'project', id: activeProject.id })}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
-                  aria-label="Project settings"
-                  title="Project settings"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void openMemory(activeProject.id)}
-                  className={cn(
-                    'inline-flex h-6 w-6 items-center justify-center rounded',
-                    mainView === 'memory'
-                      ? 'bg-accent-soft text-accent'
-                      : 'text-faint hover:bg-panel2 hover:text-ink',
-                  )}
-                  aria-label="Memory"
-                  title="Memory links"
-                >
-                  <Brain className="h-3.5 w-3.5" />
-                </button>
-              </div>
 
               {orchestrator ? (
                 <div className="mt-1 rounded-lg border border-line/80 bg-panel2/40 p-1">
@@ -694,6 +729,7 @@ export function Sidebar() {
                       expanded={expanded}
                       setExpanded={setExpanded}
                       openChat={(id) => void openChat(id)}
+                      onDelete={setDeleteTarget}
                     />
                   ))}
                 </div>
@@ -721,22 +757,6 @@ export function Sidebar() {
                   Back to active chats
                 </button>
               ) : null}
-
-              <button
-                type="button"
-                onClick={() => void openMemory(activeProject.id)}
-                className={cn(
-                  'mt-3 flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-[11px] transition-colors',
-                  mainView === 'memory'
-                    ? 'border-accent/30 bg-accent-soft text-accent'
-                    : 'border-line text-muted hover:bg-panel2 hover:text-ink',
-                )}
-              >
-                <Brain className="h-3.5 w-3.5" />
-                Memory
-                <span className="flex-1" />
-                <span className="text-[9.5px] text-faint">link agents</span>
-              </button>
             </>
           ) : null}
         </div>
@@ -767,6 +787,27 @@ export function Sidebar() {
           </button>
         </div>
       </aside>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete chat?"
+        message={
+          deleteTarget
+            ? `"${deleteTarget.title}" and any sub-agent chats will be permanently deleted, including uploaded files.`
+            : ''
+        }
+        loading={deleting}
+        onClose={() => {
+          if (!deleting) setDeleteTarget(null)
+        }}
+        onConfirm={async () => {
+          if (!deleteTarget) return
+          setDeleting(true)
+          await deleteChat(deleteTarget.id)
+          setDeleting(false)
+          setDeleteTarget(null)
+        }}
+      />
     </>
   )
 }

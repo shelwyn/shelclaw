@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS projects (
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   system_prompt TEXT NOT NULL DEFAULT '',
+  workspace_path TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL DEFAULT '#6d5efc',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -144,6 +145,18 @@ CREATE TABLE IF NOT EXISTS agent_memory (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS chat_files (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL,
+  stored_path TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT '',
+  size INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_chats_parent ON chats(parent_chat_id);
 CREATE INDEX IF NOT EXISTS idx_chats_project ON chats(project_id, last_message_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chats_updated ON chats(last_message_at DESC);
@@ -154,6 +167,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_chat ON runs(chat_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_agent_links_project ON agent_links(project_id);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_agent ON agent_memory(agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_project ON agent_memory(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_files_chat ON chat_files(chat_id, created_at);
 `)
 
 // Lightweight migrations for databases created by earlier releases.
@@ -173,6 +187,9 @@ if (!hasColumn('agents', 'is_orchestrator')) {
 }
 if (!hasColumn('messages', 'metadata')) {
   db.exec("ALTER TABLE messages ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
+}
+if (!hasColumn('projects', 'workspace_path')) {
+  db.exec("ALTER TABLE projects ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''")
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_chats_archived ON chats(archived_at)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id, created_at)')

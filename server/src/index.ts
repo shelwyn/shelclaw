@@ -1,12 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import Fastify from 'fastify'
+import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import { config } from './config.js'
 import { closeDb, db } from './db.js'
 import { AppError } from './errors.js'
 import { registerRoutes } from './routes.js'
-import { ensureProjectOrchestrators } from './store.js'
+import { ensureProjectOrchestrators, ensureProjectWorkspaces } from './store.js'
 import { now } from './util.js'
 
 const app = Fastify({
@@ -52,6 +53,11 @@ db.prepare("UPDATE chats SET status = 'idle' WHERE status = 'running'").run()
 // Projects own their agents. New projects get an Orchestrator; older projects
 // are repaired here without creating any user-facing default agents.
 ensureProjectOrchestrators()
+ensureProjectWorkspaces()
+
+await app.register(multipart, {
+  limits: { fileSize: 25 * 1024 * 1024, files: 8 },
+})
 
 await registerRoutes(app)
 

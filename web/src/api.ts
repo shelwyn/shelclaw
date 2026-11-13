@@ -3,6 +3,7 @@ import type {
   Bootstrap,
   Chat,
   ChatDetail,
+  ChatFile,
   MemoryGraph,
   Project,
   Provider,
@@ -39,7 +40,8 @@ export function setToken(token: string): void {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
-  if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
+  const isForm = typeof FormData !== 'undefined' && init.body instanceof FormData
+  if (init.body && !isForm && !headers.has('content-type')) headers.set('content-type', 'application/json')
   const token = getToken()
   if (token) headers.set('authorization', `Bearer ${token}`)
   let res: Response
@@ -81,10 +83,34 @@ export const api = {
   deleteChat: (id: string) => request<{ ok: boolean }>(`/api/chats/${id}`, { method: 'DELETE' }),
   sendMessage: (
     id: string,
-    body: { content: string; agentId?: string; providerId?: string; model?: string },
+    body: { content: string; agentId?: string; providerId?: string; model?: string; fileIds?: string[] },
   ) => request<{ run: Run; chatId: string }>(`/api/chats/${id}/messages`, { method: 'POST', ...json(body) }),
   cancelChat: (id: string) => request<{ ok: boolean }>(`/api/chats/${id}/cancel`, { method: 'POST' }),
   cancelRun: (id: string) => request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: 'POST' }),
+
+  uploadChatFile: (chatId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file, file.name)
+    return request<ChatFile>(`/api/chats/${chatId}/files`, { method: 'POST', body: form })
+  },
+  deleteChatFile: (fileId: string) =>
+    request<{ ok: boolean }>(`/api/files/${fileId}`, { method: 'DELETE' }),
+  downloadChatFile: async (file: { id: string; name: string }) => {
+    const headers = new Headers()
+    const token = getToken()
+    if (token) headers.set('authorization', `Bearer ${token}`)
+    const res = await fetch(`/api/files/${file.id}`, { headers })
+    if (!res.ok) throw new ApiError('Could not download the file.', res.status)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = file.name
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  },
 
   createProvider: (body: Partial<Provider> & { apiKey?: string }) =>
     request<Provider>('/api/providers', { method: 'POST', ...json(body) }),

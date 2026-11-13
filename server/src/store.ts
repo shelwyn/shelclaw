@@ -1,4 +1,9 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { config } from './config.js'
 import { db } from './db.js'
+import { AppError } from './errors.js'
 import type {
   Agent,
   AgentLink,
@@ -6,6 +11,7 @@ import type {
   AppSettings,
   Chat,
   ChatDetail,
+  ChatFile,
   MemoryGraph,
   Message,
   Project,
@@ -50,6 +56,7 @@ function mapProject(r: Row): Project {
     name: s(r.name),
     description: s(r.description),
     systemPrompt: s(r.system_prompt),
+    workspacePath: s(r.workspace_path),
     color: s(r.color),
     createdAt: n(r.created_at),
     updatedAt: n(r.updated_at),
@@ -223,6 +230,71 @@ export function deleteProvider(providerId: string): boolean {
   return Number(res.changes) > 0
 }
 
+/* --------------------------------- workspaces --------------------------------- */
+
+export function defaultWorkspacePath(projectId: string): string {
+  return path.join(config.workspacesDir, projectId)
+}
+
+export function ensureWorkspaceLayout(root: string): void {
+  const absolute = path.resolve(root)
+  for (const folder of ['chats', 'agents', 'memory', 'memory/shared', 'embeddings']) {
+    fs.mkdirSync(path.join(absolute, folder), { recursive: true })
+  }
+}
+
+export function resolveWorkspacePath(input: string | undefined, projectId: string): string {
+  const trimmed = (input || '').trim()
+  const expanded = trimmed ? trimmed.replace(/^~(?=$|\/)/, os.homedir()) : ''
+  const root = expanded ? path.resolve(expanded) : defaultWorkspacePath(projectId)
+  try {
+    ensureWorkspaceLayout(root)
+    fs.accessSync(root, fs.constants.W_OK)
+  } catch (err) {
+    throw new AppError(
+      `Cannot use workspace folder "${root}": ${err instanceof Error ? err.message : String(err)}`,
+      400,
+    )
+  }
+  return root
+}
+
+export function ensureProjectWorkspaces(): void {
+  const projects = db.prepare('SELECT * FROM projects').all() as Row[]
+  for (const row of projects) {
+    const project = mapProject(row)
+    let workspace = project.workspacePath
+    if (!workspace) {
+      workspace = defaultWorkspacePath(project.id)
+      db.prepare('UPDATE projects SET workspace_path = ? WHERE id = ?').run(workspace, project.id)
+    }
+    try {
+      ensureWorkspaceLayout(workspace)
+    } catch (err) {
+      console.warn(`Workspace folder unavailable for project ${project.name}:`, err)
+    }
+  }
+}
+
+export function chatUploadDir(projectId: string, chatId: string): string {
+  const project = getProject(projectId)
+  if (!project) throw new AppError('Project not found.', 404)
+  const root = project.workspacePath || defaultWorkspacePath(projectId)
+  const dir = path.join(root, 'chats', chatId, 'uploads')
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+export function agentMemoryDir(projectId: string, agentId: string): string {
+  const project = getProject(projectId)
+  if (!project) throw new AppError('Project not found.', 404)
+  const root = project.workspacePath || defaultWorkspacePath(projectId)
+  const dir = path.join(root, 'memory', agentId)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.mkdirSync(path.join(root, 'embeddings', agentId), { recursive: true })
+  return dir
+}
+
 /* ---------------------------------- projects ---------------------------------- */
 
 export function listProjects(): Project[] {
@@ -237,28 +309,57 @@ export function getProject(projectId: string): Project | undefined {
 export function createProject(input: Partial<Project> & { name: string }): Project {
   const t = now()
   const projectId = input.id || id('proj')
+  const workspacePath = resolveWorkspacePath(input.workspacePath, projectId)
   db.prepare(
-    `INSERT INTO projects (id, name, description, system_prompt, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO projects (id, name, description, system_prompt, workspace_path, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     projectId,
     input.name,
     input.description || '',
     input.systemPrompt || '',
+    workspacePath,
     input.color || '#6d5efc',
     t,
     t,
   )
   ensureProjectOrchestrator(projectId)
+  syncMemoryLinksFile(projectId)
   return getProject(projectId)!
 }
 
 export function updateProject(projectId: string, input: Partial<Project>): Project | undefined {
   const existing = getProject(projectId)
   if (!existing) return undefined
-  const merged = { ...existing, ...input, updatedAt: now() }
+
+  let workspacePath = existing.workspacePath
+  const requested = (input.workspacePath || '').trim()
+  if (requested && requested !== existing.workspacePath) {
+    const fileCount = db
+      .prepare('SELECT COUNT(*) AS n FROM chat_files WHERE project_id = ?')
+      .get(projectId) as { n: number }
+    if (Number(fileCount.n) > 0) {
+      throw new AppError(
+        'The workspace folder cannot be changed after files have been uploaded. Create a new project instead.',
+        400,
+      )
+    }
+    workspacePath = resolveWorkspacePath(requested, projectId)
+  } else if (!existing.workspacePath) {
+    workspacePath = resolveWorkspacePath('', projectId)
+  }
+
+  const merged = { ...existing, ...input, workspacePath, updatedAt: now() }
   db.prepare(
-    `UPDATE projects SET name=?, description=?, system_prompt=?, color=?, updated_at=? WHERE id=?`,
-  ).run(merged.name, merged.description, merged.systemPrompt, merged.color, merged.updatedAt, projectId)
+    `UPDATE projects SET name=?, description=?, system_prompt=?, workspace_path=?, color=?, updated_at=? WHERE id=?`,
+  ).run(
+    merged.name,
+    merged.description,
+    merged.systemPrompt,
+    merged.workspacePath,
+    merged.color,
+    merged.updatedAt,
+    projectId,
+  )
   return getProject(projectId)
 }
 
@@ -271,6 +372,15 @@ export function deleteProject(projectId: string): boolean {
   db.prepare('DELETE FROM agent_memory WHERE project_id = ?').run(projectId)
   db.prepare('DELETE FROM agents WHERE project_id = ?').run(projectId)
   const res = db.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
+
+  // Only remove the auto-managed workspace. Custom folders are left untouched.
+  if (project.workspacePath.startsWith(config.workspacesDir + path.sep)) {
+    try {
+      fs.rmSync(project.workspacePath, { recursive: true, force: true })
+    } catch {
+      // best effort
+    }
+  }
   return Number(res.changes) > 0
 }
 
@@ -405,6 +515,7 @@ export function updateAgent(agentId: string, input: Partial<Agent>): Agent | und
 export function deleteAgent(agentId: string): boolean {
   const agent = getAgent(agentId)
   if (!agent || agent.isOrchestrator) return false
+  const project = agent.projectId ? getProject(agent.projectId) : undefined
   const directChats = db
     .prepare("SELECT id FROM chats WHERE agent_id = ? AND kind = 'direct'")
     .all(agentId) as Row[]
@@ -412,6 +523,15 @@ export function deleteAgent(agentId: string): boolean {
   db.prepare('DELETE FROM agent_links WHERE agent_a = ? OR agent_b = ?').run(agentId, agentId)
   db.prepare('DELETE FROM agent_memory WHERE agent_id = ?').run(agentId)
   const res = db.prepare('DELETE FROM agents WHERE id = ?').run(agentId)
+  if (project) {
+    syncMemoryLinksFile(project.id)
+    try {
+      fs.rmSync(path.join(project.workspacePath, 'memory', agentId), { recursive: true, force: true })
+      fs.rmSync(path.join(project.workspacePath, 'embeddings', agentId), { recursive: true, force: true })
+    } catch {
+      // best effort
+    }
+  }
   return Number(res.changes) > 0
 }
 
@@ -549,7 +669,10 @@ export function setChatArchived(chatId: string, archived: boolean): Chat | undef
   return getChat(chatId)
 }
 
-export function deleteChat(chatId: string): boolean {  // Delete descendants first (chats do not have FK cascade to keep schema simple).
+export function deleteChat(chatId: string): boolean {
+  const chat = getChat(chatId)
+  const project = chat?.projectId ? getProject(chat.projectId) : undefined
+  // Delete descendants first (chats do not have FK cascade to keep schema simple).
   const stack = [chatId]
   const all: string[] = []
   while (stack.length) {
@@ -566,11 +689,21 @@ export function deleteChat(chatId: string): boolean {  // Delete descendants fir
     db.prepare('DELETE FROM tasks WHERE root_chat_id = ?').run(chatId)
     for (const cid of all.reverse()) remove.run(cid)
     db.exec('COMMIT')
-    return true
   } catch (err) {
     db.exec('ROLLBACK')
     throw err
   }
+
+  if (project?.workspacePath) {
+    for (const cid of all) {
+      try {
+        fs.rmSync(path.join(project.workspacePath, 'chats', cid), { recursive: true, force: true })
+      } catch {
+        // best effort
+      }
+    }
+  }
+  return true
 }
 
 /* ---------------------------------- messages ---------------------------------- */
@@ -858,6 +991,29 @@ export function listAgentLinks(projectId: string): AgentLink[] {
   ).map(mapAgentLink)
 }
 
+export function syncMemoryLinksFile(projectId: string): void {
+  try {
+    const project = getProject(projectId)
+    if (!project) return
+    const agents = new Map(listAgents(projectId).map((agent) => [agent.id, agent.name]))
+    const links = listAgentLinks(projectId).map((link) => ({
+      id: link.id,
+      agentA: link.agentA,
+      agentB: link.agentB,
+      agentAName: agents.get(link.agentA) || link.agentA,
+      agentBName: agents.get(link.agentB) || link.agentB,
+    }))
+    const dir = path.join(project.workspacePath, 'memory', 'shared')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'links.json'),
+      `${JSON.stringify({ projectId, updatedAt: now(), links }, null, 2)}\n`,
+    )
+  } catch {
+    // best effort
+  }
+}
+
 export function createAgentLink(projectId: string, first: string, second: string): AgentLink | undefined {
   if (!first || !second || first === second) return undefined
   const a = getAgent(first)
@@ -874,12 +1030,15 @@ export function createAgentLink(projectId: string, first: string, second: string
   db.prepare(
     'INSERT INTO agent_links (id, project_id, agent_a, agent_b, created_at) VALUES (?, ?, ?, ?, ?)',
   ).run(linkId, projectId, agentA, agentB, now())
+  syncMemoryLinksFile(projectId)
   const row = db.prepare('SELECT * FROM agent_links WHERE id = ?').get(linkId) as Row
   return mapAgentLink(row)
 }
 
 export function deleteAgentLink(linkId: string): boolean {
+  const row = db.prepare('SELECT * FROM agent_links WHERE id = ?').get(linkId) as Row | undefined
   const res = db.prepare('DELETE FROM agent_links WHERE id = ?').run(linkId)
+  if (row && Number(res.changes) > 0) syncMemoryLinksFile(s(row.project_id))
   return Number(res.changes) > 0
 }
 
@@ -891,19 +1050,30 @@ export function insertAgentMemory(input: {
   source?: string
 }): AgentMemory {
   const memoryId = id('mem')
+  const t = now()
+  const title = input.title.slice(0, 300)
+  const content = input.content.slice(0, 4000)
   db.prepare(
     'INSERT INTO agent_memory (id, project_id, agent_id, title, content, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(
-    memoryId,
-    input.projectId,
-    input.agentId,
-    input.title.slice(0, 300),
-    input.content.slice(0, 4000),
-    input.source || 'task',
-    now(),
-  )
+  ).run(memoryId, input.projectId, input.agentId, title, content, input.source || 'task', t)
   const row = db.prepare('SELECT * FROM agent_memory WHERE id = ?').get(memoryId) as Row
-  return mapAgentMemory(row)
+  const memory = mapAgentMemory(row)
+
+  // Mirror memory into the project workspace for isolation and backups.
+  try {
+    const dir = agentMemoryDir(input.projectId, input.agentId)
+    const line = `${JSON.stringify(memory)}\n`
+    fs.appendFileSync(path.join(dir, 'notes.jsonl'), line)
+    const project = getProject(input.projectId)
+    if (project) {
+      const embeddingDir = path.join(project.workspacePath, 'embeddings', input.agentId)
+      fs.mkdirSync(embeddingDir, { recursive: true })
+      fs.appendFileSync(path.join(embeddingDir, 'memory-index.jsonl'), line)
+    }
+  } catch {
+    // DB remains the source of truth if the workspace is unavailable.
+  }
+  return memory
 }
 
 export function listAgentMemory(projectId: string, limit = 80): AgentMemory[] {
@@ -977,6 +1147,79 @@ export function getSharedMemory(agentId: string, projectId: string, limit = 8): 
   })
 }
 
+/* --------------------------------- chat files --------------------------------- */
+
+function mapChatFile(r: Row): ChatFile {
+  return {
+    id: s(r.id),
+    projectId: s(r.project_id),
+    chatId: s(r.chat_id),
+    messageId: s(r.message_id),
+    name: s(r.name),
+    storedPath: s(r.stored_path),
+    mimeType: s(r.mime_type),
+    size: n(r.size),
+    createdAt: n(r.created_at),
+  }
+}
+
+export function insertChatFile(input: {
+  id: string
+  projectId: string
+  chatId: string
+  name: string
+  storedPath: string
+  mimeType: string
+  size: number
+}): ChatFile {
+  db.prepare(
+    `INSERT INTO chat_files (id, project_id, chat_id, message_id, name, stored_path, mime_type, size, created_at)
+     VALUES (?, ?, ?, '', ?, ?, ?, ?, ?)`,
+  ).run(
+    input.id,
+    input.projectId,
+    input.chatId,
+    input.name,
+    input.storedPath,
+    input.mimeType,
+    input.size,
+    now(),
+  )
+  return getChatFile(input.id)!
+}
+
+export function getChatFile(fileId: string): ChatFile | undefined {
+  const row = db.prepare('SELECT * FROM chat_files WHERE id = ?').get(fileId) as Row | undefined
+  return row ? mapChatFile(row) : undefined
+}
+
+export function listChatFiles(chatId: string): ChatFile[] {
+  return (
+    db.prepare('SELECT * FROM chat_files WHERE chat_id = ? ORDER BY created_at ASC').all(chatId) as Row[]
+  ).map(mapChatFile)
+}
+
+export function attachChatFiles(chatId: string, fileIds: string[], messageId: string): ChatFile[] {
+  if (!fileIds.length) return []
+  const placeholders = fileIds.map(() => '?').join(',')
+  db.prepare(
+    `UPDATE chat_files SET message_id = ? WHERE chat_id = ? AND id IN (${placeholders})`,
+  ).run(messageId, chatId, ...fileIds)
+  return listChatFiles(chatId).filter((file) => fileIds.includes(file.id))
+}
+
+export function deleteChatFile(fileId: string): boolean {
+  const file = getChatFile(fileId)
+  if (!file) return false
+  try {
+    fs.rmSync(file.storedPath, { force: true })
+  } catch {
+    // best effort
+  }
+  const res = db.prepare('DELETE FROM chat_files WHERE id = ?').run(fileId)
+  return Number(res.changes) > 0
+}
+
 /* --------------------------------- chat detail -------------------------------- */
 
 export function getChatDetail(chatId: string): ChatDetail | undefined {
@@ -990,6 +1233,7 @@ export function getChatDetail(chatId: string): ChatDetail | undefined {
     messages: listMessages(chatId),
     tasks: listTasksForRootChat(rootChatId),
     runs: listRuns(chatId),
+    files: listChatFiles(chatId),
     orchestrationRunId: latestRootRun?.id || '',
   } as ChatDetail
 }

@@ -34,6 +34,7 @@ export function ProjectModal({ projectId }: { projectId?: string }) {
     description: existing?.description || '',
     color: existing?.color || pickColor(Date.now() + 3),
     systemPrompt: existing?.systemPrompt || '',
+    workspacePath: existing?.workspacePath || '',
   })
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -170,6 +171,23 @@ export function ProjectModal({ projectId }: { projectId?: string }) {
               />
             ))}
           </div>
+        </Field>
+
+        <Field
+          label="Workspace folder"
+          hint={
+            existing
+              ? 'Uploaded files, memory notes, and embeddings live here. The folder cannot be moved after files are uploaded.'
+              : 'Optional. Leave blank to use the app data folder. Uploaded files, memory notes, and embeddings will live here.'
+          }
+        >
+          <Input
+            value={form.workspacePath}
+            onChange={(event) => update('workspacePath', event.target.value)}
+            placeholder={existing?.workspacePath || '~/.opencodex/workspaces/<project-id>'}
+            spellCheck={false}
+            className="font-mono text-[11.5px]"
+          />
         </Field>
 
         <Field

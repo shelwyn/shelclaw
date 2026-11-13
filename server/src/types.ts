@@ -42,6 +42,7 @@ export interface Project {
   name: string
   description: string
   systemPrompt: string
+  workspacePath: string
   color: string
   createdAt: number
   updatedAt: number
@@ -157,6 +158,7 @@ export interface ChatDetail {
   messages: Message[]
   tasks: Task[]
   runs: Run[]
+  files: ChatFile[]
   orchestrationRunId: string
 }
 
@@ -175,6 +177,18 @@ export interface AgentMemory {
   title: string
   content: string
   source: string
+  createdAt: number
+}
+
+export interface ChatFile {
+  id: string
+  projectId: string
+  chatId: string
+  messageId: string
+  name: string
+  storedPath: string
+  mimeType: string
+  size: number
   createdAt: number
 }
 

@@ -3,13 +3,17 @@ import { AppError, isAbortError } from '../errors.js'
 import { streamLLM } from '../providers/index.js'
 import type { ChatTurn, ToolDefinition } from '../providers/types.js'
 import { extractPromptToolText } from '../providers/prompt-tools.js'
+import fs from 'node:fs'
+import path from 'node:path'
 import {
+  attachChatFiles,
   createChat,
   createRun,
   createTask,
   findAgentByName,
   getAgent,
   getChat,
+  getChatFile,
   getMessage,
   getOrchestrator,
   getProject,
@@ -90,6 +94,7 @@ export interface StartOptions {
   providerId?: string
   model?: string
   title?: string
+  fileIds?: string[]
 }
 
 function addUsage(a: Usage, b: Usage): Usage {
@@ -241,6 +246,41 @@ function resolveChildModel(
   return { provider, model }
 }
 
+const TEXT_FILE_EXTENSIONS = new Set([
+  '.txt', '.md', '.markdown', '.json', '.jsonl', '.csv', '.tsv', '.yaml', '.yml',
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rb', '.go', '.rs', '.java',
+  '.c', '.h', '.cpp', '.hpp', '.cs', '.php', '.swift', '.kt', '.sh', '.bash', '.zsh',
+  '.html', '.css', '.scss', '.sql', '.xml', '.toml', '.ini', '.log', '.env.example',
+])
+
+function attachmentContext(metadata: Record<string, unknown> | undefined): string {
+  const attachments = metadata?.attachments
+  if (!Array.isArray(attachments) || !attachments.length) return ''
+  const lines: string[] = ['', '[Attached files]']
+  let textBudget = 60_000
+  for (const raw of attachments) {
+    if (!raw || typeof raw !== 'object') continue
+    const file = raw as Record<string, unknown>
+    const name = String(file.name || 'file')
+    const storedPath = String(file.storedPath || file.path || '')
+    const mimeType = String(file.mimeType || 'application/octet-stream')
+    const size = Number(file.size || 0)
+    lines.push(`- ${name} (${mimeType}, ${size} bytes): ${storedPath}`)
+    const extension = path.extname(name).toLowerCase()
+    if (textBudget <= 0) continue
+    if (!mimeType.startsWith('text/') && !TEXT_FILE_EXTENSIONS.has(extension)) continue
+    try {
+      const text = fs.readFileSync(storedPath, 'utf8')
+      const clipped = text.slice(0, Math.min(20_000, textBudget))
+      textBudget -= clipped.length
+      lines.push(`  Content of ${name}:`, '```', clipped, '```')
+    } catch {
+      lines.push('  (File content unavailable; use the path above.)')
+    }
+  }
+  return lines.join('\n')
+}
+
 function buildTurns(messages: Message[]): ChatTurn[] {  const turns: ChatTurn[] = []
   const pending = new Set<string>()
 
@@ -260,7 +300,10 @@ function buildTurns(messages: Message[]): ChatTurn[] {  const turns: ChatTurn[] 
     if (message.role === 'system' || message.role === 'agent') continue
     if (message.role === 'user') {
       flushPending()
-      turns.push({ role: 'user', content: message.content })
+      turns.push({
+        role: 'user',
+        content: `${message.content}${attachmentContext(message.metadata)}`,
+      })
       continue
     }
     if (message.role === 'assistant') {
@@ -398,7 +441,33 @@ export class Orchestrator {
     this.chatRuns.set(chatId, run.id)
     this.agentCounts.set(run.id, 0)
 
-    const userMessage = insertMessage({ chatId, runId: run.id, role: 'user', content: text })
+    const attachmentFiles = (overrides.fileIds || [])
+      .map((fileId) => getChatFile(fileId))
+      .filter((file) => file && file.chatId === chatId)
+    const userMessage = insertMessage({
+      chatId,
+      runId: run.id,
+      role: 'user',
+      content: text,
+      metadata: attachmentFiles.length
+        ? {
+            attachments: attachmentFiles.map((file) => ({
+              id: file!.id,
+              name: file!.name,
+              storedPath: file!.storedPath,
+              mimeType: file!.mimeType,
+              size: file!.size,
+            })),
+          }
+        : undefined,
+    })
+    if (attachmentFiles.length) {
+      attachChatFiles(
+        chatId,
+        attachmentFiles.map((file) => file!.id),
+        userMessage.id,
+      )
+    }
     bus.emit('message.created', { chatId, message: userMessage })
     bus.emit('run.created', { chatId, run })
     bus.emit('chat.updated', { chatId, chat })

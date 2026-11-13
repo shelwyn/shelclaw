@@ -1,6 +1,6 @@
 # OpenCodex
 
-A local-first, project-first workspace for orchestrating **local agent harnesses**. Each project owns its own Orchestrator, agents and chats. Agents run in parallel, report their finished work back to the conversation, and can share memory through a visual graph.
+A local-first, project-first workspace for orchestrating **local agent harnesses**. Each project owns its own Orchestrator, agents and chats. Agents run in parallel, report their finished work back to the conversation, and can share memory through a graph in the right-hand inspector.
 
 ![OpenCodex project workspace](docs/screenshot-project.png)
 
@@ -11,7 +11,10 @@ A local-first, project-first workspace for orchestrating **local agent harnesses
 - **Agents chat directly** — click an agent in the sidebar to open its own chat. The gear icon opens its prompt and model settings.
 - **Agent reports** — whenever a delegated task finishes, the agent's name and result appear as a message in the originating chat, even while you are elsewhere.
 - **Live working indicators** — the Orchestrator and agents pulse with a working state and the task they are running.
-- **Shared memory graph** — link agents by dragging a line between them. Linked agents read each other's recent task memory.
+- **File attachments** — attach or drag files into any Orchestrator or agent chat. Text files are read into the prompt; every file is downloadable from the message.
+- **Per-project workspace folders** — choose where a project keeps its uploaded files, memory notes and embeddings. Defaults to `DATA_DIR/workspaces/<project-id>`.
+- **Shared memory in the inspector** — open the Memory tab on the right, drag between agents to link their memory, and review recent notes without leaving the chat.
+- **Delete chats** — remove a conversation (and its sub-agent chats and uploads) from the sidebar or the chat header.
 - **Local harnesses only** — OpenCode server/CLI, Claude Code CLI, Pi CLI, or any custom local command. No cloud LLM endpoints to configure.
 - **Archive older chats** — hide finished conversations and their sub-agent trees without deleting them.
 - **Runs anywhere Node runs** — Node 24 + built-in SQLite, no native addons. Docker included for Mac, PC and Raspberry Pi.
@@ -42,11 +45,12 @@ npm run dev
 
 The SQLite database lives in `./data/opencodex.db` by default. Set `DATA_DIR` to move it. Harness connections, projects, agents, chats, reports and memory all persist across restarts.
 
-1. Click **New project** and give it a name and brief.
+1. Click **New project** and give it a name, brief and optional **workspace folder**.
 2. Open **Settings → Connect Harness** and connect a harness.
 3. Create agents from the project sidebar.
 4. Click an agent to chat with it, or start a **New chat** with the project Orchestrator.
-5. Click the gear on any agent (including the Orchestrator) to edit its system prompt and model.
+5. Attach files with the paperclip, drag-and-drop, or paste; then send.
+6. Click the gear on any agent (including the Orchestrator) to edit its system prompt and model. Use the **Memory** tab in the right inspector to link agents.
 
 ### Demo without a real agent harness
 
@@ -70,8 +74,38 @@ A project is the top-level container. It owns:
 - **chats**, including direct agent chats and sub-agent chats
 - the **memory graph** and memory notes
 - a **project brief** injected into the root agent's prompt
+- a **workspace folder** for uploaded files, memory notes and embeddings
 
-Switch projects from the list at the top of the sidebar. Deleting a project deletes its agents and chats; the confirmation dialog warns you.
+Switch projects from the list at the top of the sidebar. Deleting a project deletes its agents and chats; the confirmation dialog warns you. The auto-managed default workspace is removed too. Custom workspace folders are left on disk so you never lose files you pointed the app at.
+
+### Workspace folder
+
+Set the workspace folder when creating a project, or later in project settings (the pencil icon). Leave it blank to use `DATA_DIR/workspaces/<project-id>`.
+
+```
+<workspace>/
+  chats/<chatId>/uploads/        attachments for that chat
+  agents/                        per-agent artifacts
+  memory/<agentId>/notes.jsonl   memory notes for one agent
+  memory/shared/links.json       memory-link graph
+  embeddings/<agentId>/memory-index.jsonl
+```
+
+Uploads are capped at 25 MB each, up to 8 files per message. The folder must be writable by the server process. A folder cannot be moved after a project has uploads; create a new project instead.
+
+## File attachments
+
+Every Orchestrator and agent chat accepts files:
+
+- paperclip button, drag-and-drop, or paste
+- pending attachments are stored immediately in the chat's workspace `uploads` folder and shown as chips
+- send attaches them to the message, where they can be downloaded again
+- text-like files (code, markdown, JSON, CSV, logs and similar) are injected into the prompt with a size budget; binaries appear as a file manifest with their workspace path
+- deleting a chat or file removes the database row and the workspace copy
+
+## Deleting chats
+
+Hover a chat in the sidebar and click the trash icon, or use the menu in the chat header. Deletion removes the chat, its sub-agent chats, messages, tasks and uploaded files. You must confirm first.
 
 ## Orchestrator and agents
 
@@ -103,12 +137,13 @@ Reports are persisted, so they appear even if you were chatting somewhere else w
 
 ## Memory
 
-The Memory view is project-scoped. Each agent is a node; drag from the dashed link handle on one agent to another to create a memory link. Click the **×** on a line to unlink.
+Memory lives in the **right-hand inspector**. Open it with the brain icon next to a project (or the Inspector tab in the chat header) and choose **Memory**. Each agent is a node; drag from the dashed link handle on one agent to another to create a memory link. Click the **×** on a line to unlink.
 
 - Recent results are recorded automatically as memory notes when delegated tasks finish.
 - Linked agents read each other's recent memory on their next run.
 - Memory is injected into prompts as "Shared memory", clearly separated from instructions.
 - Orchestrator memory shows up in the same graph as specialist memory.
+- Notes and links are mirrored into the project workspace (`memory/` and `embeddings/`).
 
 ![Agent memory graph](docs/screenshot-memory.png)
 
@@ -297,12 +332,14 @@ Everything lives in one SQLite database (WAL mode):
 
 - harness connections and their credentials/passwords
 - projects, agents, chats, messages, runs/tasks
-- archive state, agent reports and memory links/notes
+- uploaded-file metadata, archive state, agent reports and memory links/notes
 - workspace settings
 
 Bare metal: `DATA_DIR/opencodex.db` (default `./data/opencodex.db`). Docker: the `opencodex-data` volume mounted at `/data`. Restarting the app or container does **not** clear it.
 
-The file is not encrypted; protect it like any credential store. Use the backup commands in the Docker section or copy the SQLite file (plus `-wal`/`-shm` while running, or stop the app first).
+Project workspaces live under `DATA_DIR/workspaces/<project-id>` by default, or in a custom folder you choose. The database is the source of truth; workspace files are the durable copies of uploads, memory notes and embedding indexes. Deleting the database does not delete custom workspace folders.
+
+The database file is not encrypted; protect it like any credential store. Use the backup commands in the Docker section or copy the SQLite file (plus `-wal`/`-shm` while running, or stop the app first). Back up custom workspace folders separately.
 
 ## Deployment
 
@@ -314,12 +351,13 @@ docker compose up -d --build
 # http://localhost:8787
 ```
 
-The app and its SQLite database are stored in the **`opencodex-data` named volume**. Harness connections, projects, agents, chats and memory survive container rebuilds and restarts.
+The app and its SQLite database are stored in the **`opencodex-data` named volume**. Harness connections, projects, agents, chats, uploads and memory survive container rebuilds and restarts.
 
 - `docker compose down` keeps the data volume.
 - `docker compose down -v` deletes the database and all app data.
 - Change the host port with `HOST_PORT=9000 docker compose up -d`.
 - Inspect logs with `docker compose logs -f`.
+- Custom project workspace folders must be mounted into the container and use container-visible paths (for example, mount a host folder at `/workspaces` and enter `/workspaces/my-project`).
 
 Back up or restore the database:
 
@@ -409,6 +447,7 @@ All endpoints are under `/api`; JSON in/out, SSE at `/api/events`.
 - `POST/PATCH/DELETE /api/agents`, `POST /api/agents/:id/chat`
 - `POST/GET/PATCH/DELETE /api/chats`, `POST /api/chats/:id/messages`
   - `PATCH /api/chats/:id` with `{"archived": true}` archives the chat and its descendants; `false` restores them.
+- `GET/POST /api/chats/:id/files` (multipart upload, max 25 MB × 8), `GET/DELETE /api/files/:id`
 - `POST /api/chats/:id/cancel`, `POST /api/runs/:id/cancel`
 - `PATCH /api/settings`
 

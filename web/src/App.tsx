@@ -5,7 +5,6 @@ import { AgentModal } from './components/AgentModal'
 import { AuthScreen } from './components/AuthScreen'
 import { ChatView } from './components/ChatView'
 import { Inspector } from './components/Inspector'
-import { MemoryView } from './components/MemoryView'
 import { ProjectModal } from './components/ProjectModal'
 import { SettingsModal } from './components/SettingsModal'
 import { Sidebar } from './components/Sidebar'
@@ -60,7 +59,7 @@ export default function App() {
   const theme = useAppStore((state) => state.theme)
   const modal = useAppStore((state) => state.modal)
   const hasDetail = useAppStore((state) => Boolean(state.detail))
-  const mainView = useAppStore((state) => state.mainView)
+  const inspectorTab = useAppStore((state) => state.inspectorTab)
   const inspectorOpen = useAppStore((state) => state.inspectorOpen)
   const chatTitle = useAppStore((state) => state.detail?.chat.title || '')
   const workspaceName = useAppStore((state) => state.settings.workspaceName)
@@ -108,8 +107,8 @@ export default function App() {
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-bg">
       <Sidebar />
-      {mainView === 'memory' ? <MemoryView /> : <ChatView />}
-      {mainView === 'chat' && hasDetail && inspectorOpen ? <Inspector /> : null}
+      <ChatView />
+      {(hasDetail || inspectorTab === 'memory') && inspectorOpen ? <Inspector /> : null}
 
       {modal?.type === 'settings' ? (
         <SettingsModal initialTab={modal.tab || 'providers'} />

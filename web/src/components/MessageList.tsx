@@ -6,11 +6,14 @@ import {
   ChevronRight,
   CircleDashed,
   Clock,
+  Download,
+  FileText,
   GitBranch,
   Layers,
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { api } from '../api'
 import { useAppStore } from '../store'
 import type { Agent, Message, Task, ToolCall } from '../types'
 import { fmtTokens, modelShort, relativeTime, timeOfDay, totalTokens } from '../lib/format'
@@ -278,6 +281,44 @@ function AssistantMessage({
   )
 }
 
+interface MessageAttachment {
+  id: string
+  name: string
+  size?: number
+  mimeType?: string
+}
+
+function formatSize(bytes: number | undefined): string {
+  if (!bytes || bytes < 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function MessageAttachments({ metadata }: { metadata: Record<string, unknown> }) {
+  const raw = metadata?.attachments
+  if (!Array.isArray(raw) || !raw.length) return null
+  const files = raw as MessageAttachment[]
+  return (
+    <div className={cn('flex flex-wrap gap-1.5', 'mb-1.5')}>
+      {files.map((file) => (
+        <button
+          key={file.id}
+          type="button"
+          onClick={() => void api.downloadChatFile(file)}
+          className="group inline-flex max-w-full items-center gap-1.5 rounded-lg border border-accent/25 bg-panel/70 py-1 pl-2 pr-1.5 text-[10.5px] text-muted transition-colors hover:border-accent/50 hover:text-ink"
+          title={`Download ${file.name}`}
+        >
+          <FileText className="h-3 w-3 shrink-0 text-accent" />
+          <span className="max-w-[180px] truncate font-medium">{file.name}</span>
+          {file.size ? <span className="shrink-0 text-[9px] text-faint">{formatSize(file.size)}</span> : null}
+          <Download className="h-2.5 w-2.5 shrink-0 text-faint group-hover:text-accent" />
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function MessageList() {
   const chat = useAppStore((state) => state.detail?.chat || null)
   const allMessages = useAppStore((state) => state.detail?.messages)
@@ -406,8 +447,9 @@ export function MessageList() {
           {messages.map((message) =>
             message.role === 'user' ? (
               <div key={message.id} className="fade-up flex justify-end">
-                <div className="max-w-[86%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-accent/20 bg-accent-soft px-4 py-2.5 text-[13.5px] leading-relaxed text-ink">
-                  {message.content}
+                <div className="max-w-[86%] rounded-2xl rounded-br-md border border-accent/20 bg-accent-soft px-4 py-2.5 text-[13.5px] leading-relaxed text-ink">
+                  <MessageAttachments metadata={message.metadata} />
+                  <div className="whitespace-pre-wrap">{message.content}</div>
                 </div>
               </div>
             ) : message.role === 'agent' ? (

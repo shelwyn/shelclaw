@@ -1,5 +1,6 @@
 import {
   Ban,
+  Brain,
   Check,
   ChevronDown,
   ChevronRight,
@@ -18,6 +19,7 @@ import { useEffect, useState } from 'react'
 import { useAppStore } from '../store'
 import type { Agent, Task } from '../types'
 import { duration, fmtTokens, modelShort, plural } from '../lib/format'
+import { MemoryPanel } from './MemoryPanel'
 import { Avatar, Badge, Button, cn, EmptyState, Spinner } from './ui'
 
 function TaskStatusIcon({ status }: { status: Task['status'] }) {
@@ -177,6 +179,8 @@ export function Inspector() {
   const agents = useAppStore((state) => state.agents)
   const activeRuns = useAppStore((state) => state.activeRuns)
   const inspectorOpen = useAppStore((state) => state.inspectorOpen)
+  const inspectorTab = useAppStore((state) => state.inspectorTab)
+  const setInspectorTab = useAppStore((state) => state.setInspectorTab)
   const toggleInspector = useAppStore((state) => state.toggleInspector)
   const openModal = useAppStore((state) => state.openModal)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -232,16 +236,20 @@ export function Inspector() {
       <aside className="fixed inset-y-0 right-0 z-40 flex w-[332px] max-w-[85vw] shrink-0 flex-col border-l border-line bg-panel shadow-[-12px_0_40px_-20px_rgba(0,0,0,0.3)] xl:static xl:z-auto xl:shadow-none">
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-3.5">
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/10 text-accent">
-            <Network className="h-3.5 w-3.5" />
+            {inspectorTab === 'memory' ? <Brain className="h-3.5 w-3.5" /> : <Network className="h-3.5 w-3.5" />}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[12.5px] font-semibold text-ink">Orchestration</div>
+            <div className="text-[12.5px] font-semibold text-ink">
+              {inspectorTab === 'memory' ? 'Agent memory' : 'Orchestration'}
+            </div>
             <div className="text-[9.5px] text-faint">
-              {isRunning
-                ? `live · ${running.length} active`
-                : tasks.length
-                  ? 'latest run'
-                  : 'no delegated tasks'}
+              {inspectorTab === 'memory'
+                ? 'drag to link · click × to unlink'
+                : isRunning
+                  ? `live · ${running.length} active`
+                  : tasks.length
+                    ? 'latest run'
+                    : 'no delegated tasks'}
             </div>
           </div>
           <button
@@ -256,14 +264,41 @@ export function Inspector() {
             type="button"
             onClick={toggleInspector}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink"
-            aria-label="Close orchestration panel"
+            aria-label="Close inspector"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
+        <div className="flex shrink-0 gap-1 border-b border-line p-1.5">
+          <button
+            type="button"
+            onClick={() => setInspectorTab('orchestration')}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1.5 rounded-md py-1 text-[10.5px] font-medium transition-colors',
+              inspectorTab === 'orchestration'
+                ? 'bg-panel2 text-ink'
+                : 'text-muted hover:text-ink',
+            )}
+          >
+            <Network className="h-3 w-3" /> Orchestration
+          </button>
+          <button
+            type="button"
+            onClick={() => setInspectorTab('memory')}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1.5 rounded-md py-1 text-[10.5px] font-medium transition-colors',
+              inspectorTab === 'memory' ? 'bg-panel2 text-ink' : 'text-muted hover:text-ink',
+            )}
+          >
+            <Brain className="h-3 w-3" /> Memory
+          </button>
+        </div>
+
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 py-3">
-          {!chat ? (
+          {inspectorTab === 'memory' ? (
+            <MemoryPanel />
+          ) : !chat ? (
             <EmptyState
               icon={<Network className="h-4 w-4" />}
               title="No chat selected"
@@ -443,8 +478,9 @@ export function Inspector() {
         </div>
 
         <div className="shrink-0 border-t border-line px-3.5 py-2 text-[9.5px] leading-relaxed text-faint">
-          Sub-agents are isolated: each gets only the brief the parent wrote, its own model, and its
-          own chat you can inspect.
+          {inspectorTab === 'memory'
+            ? 'Memory notes and links live inside the project workspace. Linked agents see each other’s notes in their prompts.'
+            : 'Sub-agents are isolated: each gets only the brief the parent wrote, its own model, and its own chat you can inspect.'}
         </div>
       </aside>
     </>

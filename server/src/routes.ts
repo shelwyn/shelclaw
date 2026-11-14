@@ -9,6 +9,7 @@ import { config } from './config.js'
 import { db } from './db.js'
 import { AppError } from './errors.js'
 import { orchestrator } from './orchestrator/engine.js'
+import { listMcpTools, sanitizeMcpError } from './mcp.js'
 import {
   buildPreview,
   detectMimeType,
@@ -22,12 +23,14 @@ import {
   createAgent,
   createAgentLink,
   createChat,
+  createMcpServer,
   createProject,
   createProvider,
   deleteAgent,
   deleteAgentLink,
   deleteChat,
   deleteChatFile,
+  deleteMcpServer,
   deleteProject,
   deleteProvider,
   enqueueMessage,
@@ -37,6 +40,8 @@ import {
   getChatDetail,
   getChatFile,
   getMemoryGraph,
+  getMcpServer,
+  getMcpServerInternal,
   getOrCreateDirectChat,
   getOrchestrator,
   getProject,
@@ -48,6 +53,7 @@ import {
   listArtifacts,
   listChatFiles,
   listChats,
+  listMcpServers,
   listProjects,
   listSafeProviders,
   removeQueuedMessage,
@@ -58,6 +64,7 @@ import {
   clearQueuedMessages,
   updateAgent,
   updateChat,
+  updateMcpServer,
   updateProject,
   updateProvider,
   updateSettings,
@@ -78,8 +85,23 @@ const providerInput = z.object({
   config: z.record(z.unknown()).optional(),
 })
 
-const projectInput = z.object({
-  name: z.string().min(1).max(120).optional(),
+const mcpCredentialMap = z
+  .record(z.string().min(1).max(200), z.string().max(8000))
+  .optional()
+
+const mcpInput = z.object({
+  name: z.string().min(1).max(80),
+  transport: z.enum(['stdio', 'http']),
+  command: z.string().max(1000).optional(),
+  args: z.array(z.string().max(1000)).max(100).optional(),
+  url: z.string().max(2000).optional(),
+  enabled: z.boolean().optional(),
+  env: mcpCredentialMap,
+  headers: mcpCredentialMap,
+  clearCredentials: z.boolean().optional(),
+})
+
+const projectInput = z.object({  name: z.string().min(1).max(120).optional(),
   description: z.string().max(4000).optional(),
   systemPrompt: z.string().max(30000).optional(),
   workspacePath: z.string().max(2000).optional(),
@@ -664,6 +686,57 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (cleared) bus.emit('queue.changed', { chatId: run.chatId })
     }
     return { ok: orchestrator.cancelRun(id) }
+  })
+
+  /* ------------------------------ mcp integrations ----------------------------- */
+
+  app.get('/api/mcp', async () => ({ servers: listMcpServers() }))
+
+  app.post('/api/mcp', async (req) => {
+    const input = parse(mcpInput, req.body)
+    if (input.transport === 'stdio' && !input.command?.trim()) {
+      throw new AppError('A command is required for a stdio MCP server.', 400)
+    }
+    if (input.transport === 'http' && !/^https?:\/\//i.test(input.url?.trim() || '')) {
+      throw new AppError('A valid http:// or https:// URL is required.', 400)
+    }
+    return createMcpServer({
+      ...input,
+      command: input.command?.trim(),
+      url: input.url?.trim(),
+    })
+  })
+
+  app.patch('/api/mcp/:id', async (req) => {
+    const { id } = req.params as { id: string }
+    const input = parse(mcpInput.partial(), req.body)
+    if (input.transport === 'stdio' && input.command !== undefined && !input.command.trim()) {
+      throw new AppError('A command is required for a stdio MCP server.', 400)
+    }
+    const updated = updateMcpServer(id, input)
+    if (!updated) throw new AppError('MCP server not found.', 404)
+    return updated
+  })
+
+  app.delete('/api/mcp/:id', async (req) => {
+    const { id } = req.params as { id: string }
+    if (!deleteMcpServer(id)) throw new AppError('MCP server not found.', 404)
+    return { ok: true }
+  })
+
+  app.post('/api/mcp/:id/test', async (req) => {
+    const { id } = req.params as { id: string }
+    const server = getMcpServerInternal(id)
+    if (!server) throw new AppError('MCP server not found.', 404)
+    try {
+      const tools = await listMcpTools(server)
+      return {
+        ok: true,
+        tools: tools.map((tool) => ({ name: tool.name, description: tool.description || '' })),
+      }
+    } catch (err) {
+      throw new AppError(sanitizeMcpError(server, err), 400)
+    }
   })
 
   /* ---------------------------------- settings ---------------------------------- */

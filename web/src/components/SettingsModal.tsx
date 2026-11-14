@@ -5,6 +5,7 @@ import {
   Download,
   KeyRound,
   Pencil,
+  Plug,
   Plus,
   RefreshCw,
   Server,
@@ -13,10 +14,10 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { useAppStore } from '../store'
-import type { Provider, ProviderKind } from '../types'
+import type { McpServer, Provider, ProviderKind } from '../types'
 import { providerKindLabel, isHarnessKind } from '../lib/format'
 import {
   Badge,
@@ -1019,7 +1020,484 @@ function WorkspaceSettings() {
   )
 }
 
-export function SettingsModal({ initialTab }: { initialTab: 'providers' | 'workspace' }) {
+interface McpFormState {
+  id: string
+  name: string
+  transport: 'stdio' | 'http'
+  command: string
+  argsText: string
+  url: string
+  enabled: boolean
+  envText: string
+  headersText: string
+  clearCredentials: boolean
+}
+
+const emptyMcpForm = (): McpFormState => ({
+  id: '',
+  name: '',
+  transport: 'stdio',
+  command: '',
+  argsText: '',
+  url: '',
+  enabled: true,
+  envText: '',
+  headersText: '',
+  clearCredentials: false,
+})
+
+function formFromMcp(server: McpServer): McpFormState {
+  return {
+    id: server.id,
+    name: server.name,
+    transport: server.transport,
+    command: server.command,
+    argsText: server.args.join('\n'),
+    url: server.url,
+    enabled: server.enabled,
+    envText: '',
+    headersText: '',
+    clearCredentials: false,
+  }
+}
+
+function parseCredentialLines(text: string): Record<string, string> | null {
+  const result: Record<string, string> = {}
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const equal = line.indexOf('=')
+    const colon = line.indexOf(':')
+    let index = -1
+    if (equal >= 0 && (colon < 0 || equal < colon)) index = equal
+    else if (colon >= 0) index = colon
+    if (index <= 0) return null
+    const key = line.slice(0, index).trim()
+    const value = line.slice(index + 1).trim()
+    if (!key) return null
+    result[key] = value
+  }
+  return result
+}
+
+function McpSettings() {
+  const toast = useAppStore((state) => state.toast)
+  const [servers, setServers] = useState<McpServer[]>([])
+  const [loading, setLoading] = useState(false)
+  const [testing, setTesting] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<McpServer | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState<McpFormState | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [toolsByServer, setToolsByServer] = useState<Record<string, string[]>>({})
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const result = await api.mcpServers()
+      setServers(result.servers)
+    } catch (err) {
+      toast('error', errorText(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+  }, [])
+
+  const save = async () => {
+    if (!editing) return
+    const env = parseCredentialLines(editing.envText)
+    const headers = parseCredentialLines(editing.headersText)
+    if (!env || !headers) {
+      toast('error', 'Credentials must use one KEY=value pair per line.')
+      return
+    }
+    const args = editing.argsText
+      .split('\n')
+      .map((arg) => arg.trim())
+      .filter(Boolean)
+    setSaving(true)
+    try {
+      if (editing.id) {
+        await api.updateMcpServer(editing.id, {
+          name: editing.name,
+          transport: editing.transport,
+          command: editing.command,
+          args,
+          url: editing.url,
+          enabled: editing.enabled,
+          ...(editing.envText.trim() ? { env } : {}),
+          ...(editing.headersText.trim() ? { headers } : {}),
+          clearCredentials: editing.clearCredentials,
+        })
+        toast('success', 'MCP server updated.')
+      } else {
+        await api.createMcpServer({
+          name: editing.name,
+          transport: editing.transport,
+          command: editing.command,
+          args,
+          url: editing.url,
+          enabled: editing.enabled,
+          env,
+          headers,
+        })
+        toast('success', 'MCP server connected.')
+      }
+      setEditing(null)
+      await load()
+    } catch (err) {
+      toast('error', errorText(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const runTest = async (server: McpServer) => {
+    setTesting(server.id)
+    try {
+      const result = await api.testMcpServer(server.id)
+      const names = result.tools.map((tool) => tool.name)
+      setToolsByServer((current) => ({ ...current, [server.id]: names }))
+      toast(
+        'success',
+        `${server.name}: connected · ${names.length} tool${names.length === 1 ? '' : 's'}${
+          names.length ? ` (${names.slice(0, 5).join(', ')})` : ''
+        }`,
+      )
+    } catch (err) {
+      toast('error', `${server.name}: ${errorText(err)}`)
+    } finally {
+      setTesting('')
+    }
+  }
+
+  const remove = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await api.deleteMcpServer(deleteTarget.id)
+      setDeleteTarget(null)
+      await load()
+      toast('success', 'MCP server removed.')
+    } catch (err) {
+      toast('error', errorText(err))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-line bg-panel2/40 px-3 py-2.5 text-[10.5px] leading-relaxed text-muted">
+        <div className="flex items-center gap-1.5 font-medium text-ink">
+          <KeyRound className="h-3.5 w-3.5" /> Credentials stay on this server
+        </div>
+        MCP credentials are encrypted at rest with AES-256-GCM using a local key. They are decrypted
+        only when OpenCodex connects to the MCP server, are never returned by the API, and are never
+        included in any model prompt.
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11.5px] text-muted">
+          Connect stdio or HTTP MCP servers. Disabled servers are not used by agents.
+        </p>
+        <Button variant="secondary" size="sm" onClick={() => setEditing(emptyMcpForm())}>
+          <Plus className="h-3.5 w-3.5" /> Add MCP server
+        </Button>
+      </div>
+
+      {loading && !servers.length ? (
+        <div className="flex justify-center py-10">
+          <Spinner className="h-4 w-4 text-ink" />
+        </div>
+      ) : servers.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-line px-5 py-8 text-center">
+          <Plug className="mx-auto h-5 w-5 text-faint" />
+          <div className="mt-2 text-[12.5px] font-medium text-ink">No MCP servers connected</div>
+          <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-muted">
+            Add a stdio command or an HTTP endpoint. Credentials are stored encrypted and used only
+            server-side.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {servers.map((server) => (
+            <div
+              key={server.id}
+              className="rounded-xl border border-line bg-panel px-3 py-2.5 transition-colors hover:border-line-strong"
+            >
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-line bg-panel2 text-muted">
+                  <Plug className="h-3.5 w-3.5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[12.5px] font-semibold text-ink">{server.name}</span>
+                    <Badge>{server.transport === 'stdio' ? 'stdio' : 'HTTP'}</Badge>
+                    <span className={server.enabled ? 'text-[9.5px] text-ink' : 'text-[9.5px] text-faint'}>
+                      {server.enabled ? 'enabled' : 'disabled'}
+                    </span>
+                    {server.hasEnv || server.hasHeaders ? (
+                      <span className="inline-flex items-center gap-1 text-[9.5px] text-ink">
+                        <KeyRound className="h-2.5 w-2.5" /> encrypted credentials
+                      </span>
+                    ) : (
+                      <span className="text-[9.5px] text-faint">no credentials</span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[10px] text-faint">
+                    {server.transport === 'stdio'
+                      ? [server.command, ...server.args].filter(Boolean).join(' ')
+                      : server.url}
+                  </div>
+                  {server.envKeys.length || server.headerKeys.length ? (
+                    <div className="mt-1 truncate text-[9.5px] text-faint">
+                      Keys: {[...server.envKeys, ...server.headerKeys].join(', ')}
+                    </div>
+                  ) : null}
+                  {toolsByServer[server.id]?.length ? (
+                    <div className="mt-1 text-[9.5px] text-muted">
+                      Tools: {toolsByServer[server.id].join(', ')}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <Toggle
+                    checked={server.enabled}
+                    onChange={(value) =>
+                      void api
+                        .updateMcpServer(server.id, { enabled: value })
+                        .then(() => load())
+                        .catch((err) => toast('error', errorText(err)))
+                    }
+                    label={`${server.enabled ? 'Disable' : 'Enable'} ${server.name}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void runTest(server)}
+                    disabled={testing === server.id}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-panel2 hover:text-ink disabled:opacity-40"
+                    title="Test connection and list tools"
+                  >
+                    {testing === server.id ? (
+                      <Spinner className="h-3.5 w-3.5" />
+                    ) : (
+                      <Zap className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditing(formFromMcp(server))}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-panel2 hover:text-ink"
+                    title="Edit MCP server"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(server)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-panel2 hover:text-danger"
+                    title="Remove MCP server"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editing ? (
+        <Modal
+          open
+          onClose={() => setEditing(null)}
+          title={editing.id ? 'Edit MCP server' : 'Connect MCP server'}
+          subtitle="Credentials are encrypted at rest and never sent to a model."
+          size="md"
+          footer={
+            <>
+              <Button variant="ghost" size="md" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                loading={saving}
+                disabled={!editing.name.trim()}
+                onClick={() => void save()}
+              >
+                {editing.id ? 'Save changes' : 'Connect server'}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Name">
+                <Input
+                  value={editing.name}
+                  onChange={(event) =>
+                    setEditing((current) =>
+                      current ? { ...current, name: event.target.value } : current,
+                    )
+                  }
+                  placeholder="e.g. GitHub MCP"
+                />
+              </Field>
+              <Field label="Transport">
+                <Select
+                  value={editing.transport}
+                  onChange={(event) =>
+                    setEditing((current) =>
+                      current
+                        ? { ...current, transport: event.target.value as 'stdio' | 'http' }
+                        : current,
+                    )
+                  }
+                >
+                  <option value="stdio">stdio (local command)</option>
+                  <option value="http">HTTP / SSE endpoint</option>
+                </Select>
+              </Field>
+            </div>
+
+            {editing.transport === 'stdio' ? (
+              <>
+                <Field label="Command" hint="Executable on the server host.">
+                  <Input
+                    value={editing.command}
+                    onChange={(event) =>
+                      setEditing((current) =>
+                        current ? { ...current, command: event.target.value } : current,
+                      )
+                    }
+                    placeholder="npx"
+                    className="font-mono text-[12px]"
+                  />
+                </Field>
+                <Field label="Arguments" hint="One argument per line.">
+                  <Textarea
+                    value={editing.argsText}
+                    onChange={(event) =>
+                      setEditing((current) =>
+                        current ? { ...current, argsText: event.target.value } : current,
+                      )
+                    }
+                    rows={3}
+                    placeholder={'-y\n@modelcontextprotocol/server-filesystem\n/path'}
+                    className="font-mono text-[11.5px]"
+                  />
+                </Field>
+              </>
+            ) : (
+              <Field label="URL" hint="HTTP endpoint exposed by the MCP server.">
+                <Input
+                  value={editing.url}
+                  onChange={(event) =>
+                    setEditing((current) =>
+                      current ? { ...current, url: event.target.value } : current,
+                    )
+                  }
+                  placeholder="https://mcp.example.com/mcp"
+                  className="font-mono text-[12px]"
+                />
+              </Field>
+            )}
+
+            <Field
+              label="Environment variables"
+              hint={
+                editing.id
+                  ? 'Leave blank to keep the stored values. One KEY=value per line.'
+                  : 'One KEY=value per line. Stored encrypted.'
+              }
+            >
+              <Textarea
+                value={editing.envText}
+                onChange={(event) =>
+                  setEditing((current) =>
+                    current ? { ...current, envText: event.target.value } : current,
+                  )
+                }
+                rows={3}
+                placeholder="API_KEY=your-key"
+                className="font-mono text-[11.5px]"
+              />
+            </Field>
+
+            <Field
+              label="HTTP headers"
+              hint={
+                editing.id
+                  ? 'Leave blank to keep the stored values. One Header: value per line.'
+                  : 'One Header: value per line. Stored encrypted.'
+              }
+            >
+              <Textarea
+                value={editing.headersText}
+                onChange={(event) =>
+                  setEditing((current) =>
+                    current ? { ...current, headersText: event.target.value } : current,
+                  )
+                }
+                rows={3}
+                placeholder="Authorization: Bearer your-token"
+                className="font-mono text-[11.5px]"
+              />
+            </Field>
+
+            {editing.id ? (
+              <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={editing.clearCredentials}
+                  onChange={(event) =>
+                    setEditing((current) =>
+                      current ? { ...current, clearCredentials: event.target.checked } : current,
+                    )
+                  }
+                  className="h-3.5 w-3.5 accent-[var(--ink)]"
+                />
+                Remove all stored credentials for this server
+              </label>
+            ) : null}
+
+            <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted">
+              <input
+                type="checkbox"
+                checked={editing.enabled}
+                onChange={(event) =>
+                  setEditing((current) =>
+                    current ? { ...current, enabled: event.target.checked } : current,
+                  )
+                }
+                className="h-3.5 w-3.5 accent-[var(--ink)]"
+              />
+              Enable this server for agent tools
+            </label>
+          </div>
+        </Modal>
+      ) : null}
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Remove MCP server?"
+        message={`${deleteTarget?.name || 'This MCP server'} and its encrypted credentials will be removed.`}
+        confirmLabel="Remove"
+        loading={deleting}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void remove()}
+      />
+    </div>
+  )
+}
+
+export function SettingsModal({ initialTab }: { initialTab: 'providers' | 'workspace' | 'mcp' }) {
   const closeModal = useAppStore((state) => state.closeModal)
   const [tab, setTab] = useState(initialTab)
   const [view, setView] = useState<'list' | 'form'>('list')
@@ -1042,7 +1520,8 @@ export function SettingsModal({ initialTab }: { initialTab: 'providers' | 'works
       <div className="mb-4 flex gap-1 rounded-lg border border-line bg-panel2 p-0.5">
         {(
           [
-            { id: 'providers', label: 'Connect Harness', icon: Cpu },
+            { id: 'providers', label: 'Harness', icon: Cpu },
+            { id: 'mcp', label: 'MCP Servers', icon: Plug },
             { id: 'workspace', label: 'Workspace', icon: Settings2 },
           ] as const
         ).map((entry) => {
@@ -1083,6 +1562,8 @@ export function SettingsModal({ initialTab }: { initialTab: 'providers' | 'works
             }}
           />
         )
+      ) : tab === 'mcp' ? (
+        <McpSettings />
       ) : (
         <WorkspaceSettings />
       )}

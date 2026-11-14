@@ -5,6 +5,7 @@ import type {
   Chat,
   ChatDetail,
   ChatFile,
+  McpServer,
   MemoryGraph,
   PreviewPayload,
   Project,
@@ -148,10 +149,33 @@ export const api = {
   },
 
   createProvider: (body: Partial<Provider> & { apiKey?: string }) =>
-    request<Provider>('/api/providers', { method: 'POST', ...json(body) }),
-  updateProvider: (id: string, body: Partial<Provider> & { apiKey?: string }) =>
+    request<Provider>('/api/providers', { method: 'POST', ...json(body) }),  updateProvider: (id: string, body: Partial<Provider> & { apiKey?: string }) =>
     request<Provider>(`/api/providers/${id}`, { method: 'PATCH', ...json(body) }),
   deleteProvider: (id: string) => request<{ ok: boolean }>(`/api/providers/${id}`, { method: 'DELETE' }),
+
+  mcpServers: () => request<{ servers: McpServer[] }>('/api/mcp'),
+  createMcpServer: (
+    body: Partial<McpServer> & {
+      name: string
+      transport: 'stdio' | 'http'
+      env?: Record<string, string>
+      headers?: Record<string, string>
+    },
+  ) => request<McpServer>('/api/mcp', { method: 'POST', ...json(body) }),
+  updateMcpServer: (
+    id: string,
+    body: Partial<McpServer> & {
+      env?: Record<string, string>
+      headers?: Record<string, string>
+      clearCredentials?: boolean
+    },
+  ) => request<McpServer>(`/api/mcp/${id}`, { method: 'PATCH', ...json(body) }),
+  deleteMcpServer: (id: string) => request<{ ok: boolean }>(`/api/mcp/${id}`, { method: 'DELETE' }),
+  testMcpServer: (id: string) =>
+    request<{ ok: boolean; tools: Array<{ name: string; description: string }> }>(
+      `/api/mcp/${id}/test`,
+      { method: 'POST' },
+    ),
   fetchModels: (id: string) =>
     request<{ models: string[]; count: number }>(`/api/providers/${id}/models`, { method: 'POST' }),
   testProvider: (id: string) =>

@@ -211,6 +211,42 @@ export interface Artifact {
   createdAt: number
 }
 
+export type McpTransport = 'stdio' | 'http'
+
+export interface McpServer {
+  id: string
+  name: string
+  transport: McpTransport
+  command: string
+  args: string[]
+  url: string
+  enabled: boolean
+  hasEnv: boolean
+  envKeys: string[]
+  hasHeaders: boolean
+  headerKeys: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface McpServerSecrets {
+  env: Record<string, string>
+  headers: Record<string, string>
+}
+
+export interface McpServerInternal extends McpServer {
+  env: Record<string, string>
+  headers: Record<string, string>
+}
+
+export interface McpToolSummary {
+  serverId: string
+  serverName: string
+  name: string
+  description: string
+  inputSchema: unknown
+}
+
 export interface PreviewSheet {
   name: string
   rows: string[][]

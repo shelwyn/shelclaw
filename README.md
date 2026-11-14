@@ -183,6 +183,25 @@ Memory lives in the **right-hand inspector**. Open it with the brain icon next t
 
 ![Agent memory graph](docs/screenshot-memory.png)
 
+## MCP servers
+
+Add MCP servers in **Settings → MCP Servers**. Both transports are supported:
+
+- **stdio** — command and arguments, with encrypted environment variables
+- **HTTP / SSE** — endpoint URL, with encrypted request headers
+
+Use **Test connection** to initialize the server and list its tools. Enabled servers expose their tools to agents as `mcp_call`; the model sees only server names, tool names, descriptions and input schemas.
+
+### Credential security
+
+- Credentials are encrypted at rest with **AES-256-GCM** before they touch SQLite.
+- The encryption key lives in `DATA_DIR/secret.key` with mode `0600`, or can be supplied via `OCX_SECRET_KEY` (32-byte base64/hex).
+- Credentials are decrypted only in server memory when connecting to the MCP server.
+- The API never returns credential values. It returns key names and `hasEnv` / `hasHeaders` flags only.
+- Credentials are never included in prompts, tool definitions, tool results, logs, chat history or model context.
+- Harness passwords and advanced harness configuration (including environment values) are encrypted through the same vault. Legacy plaintext values are encrypted automatically on startup.
+- Back up `secret.key` with the database. If the key is lost, stored credentials cannot be decrypted and must be re-entered.
+
 ## Harnesses
 
 | Harness | How it runs |
@@ -331,16 +350,19 @@ web/src
 
 Everything lives in one SQLite database (WAL mode):
 
-- harness connections and their credentials/passwords
+- harness connections and their encrypted credentials/passwords
+- MCP servers and their encrypted environment variables/headers
 - projects, agents, chats, messages, runs/tasks
 - uploaded-file metadata, archive state, agent reports and memory links/notes
 - workspace settings
 
 Bare metal: `DATA_DIR/opencodex.db` (default `./data/opencodex.db`). Docker: the `opencodex-data` volume mounted at `/data`. Restarting the app or container does **not** clear it.
 
+The encryption key is `DATA_DIR/secret.key` (mode `0600`). It is created automatically and is part of the Docker data volume. Back it up with the database; without it, encrypted credentials cannot be recovered.
+
 Project workspaces are chosen per project and required at creation. The database is the source of truth; workspace files are the durable copies of uploads, memory notes and embedding indexes. Project deletion never deletes the workspace folder.
 
-The database file is not encrypted; protect it like any credential store. Use the backup commands in the Docker section or copy the SQLite file (plus `-wal`/`-shm` while running, or stop the app first). Back up custom workspace folders separately.
+The database file itself is not encrypted, but secrets inside it are. Protect it like any credential store. Use the backup commands in the Docker section or copy the SQLite file (plus `-wal`/`-shm` while running, or stop the app first). Back up `secret.key` and custom workspace folders separately.
 
 ## Deployment
 
@@ -430,11 +452,13 @@ WantedBy=multi-user.target
 | `DATA_DIR` | `./data` | SQLite location |
 | `APP_TOKEN` | empty | Optional bearer token gate for every API/SSE request |
 | `OPENCODE_BIN` | `opencode` | Default OpenCode executable |
+| `OCX_SECRET_KEY` | generated | 32-byte base64/hex master key for credential encryption. Prefer `secret.key`. |
+| `OCX_SECRET_KEY_FILE` | `DATA_DIR/secret.key` | Path to the encryption key file |
 | `LOG_LEVEL` | `warn` | Fastify log level |
 | `HOST_PORT` | `8787` | Docker Compose host port |
 | `NPMRC_PATH` | `.npmrc.docker` | npm config file used as a Docker build secret |
 
-Harness credentials stay on the server. The SQLite file is **not encrypted** — protect it like any credential store, and back it up when upgrading.
+Harness credentials and MCP credentials are encrypted at rest with a server-local key. The SQLite file itself is not encrypted — protect it and `secret.key` like any credential store, and back them up when upgrading.
 
 ## API overview
 
@@ -453,6 +477,7 @@ All endpoints are under `/api`; JSON in/out, SSE at `/api/events`.
 - `GET /api/projects/:id/artifacts` — uploads plus agent-created workspace files
 - `DELETE /api/queue/:id` removes a queued message; `POST /api/chats/:id/messages` returns `{queued: true}` when the chat is busy
 - `POST /api/chats/:id/cancel`, `POST /api/runs/:id/cancel`
+- `GET/POST /api/mcp`, `PATCH/DELETE /api/mcp/:id`, `POST /api/mcp/:id/test` — credentials are encrypted and never returned
 - `PATCH /api/settings`
 
 SSE event types include `message.created`, `message.delta`, `message.completed`, `task.created`, `task.updated`, `run.created`, `run.updated`, `chat.updated`, `chats.changed`, `queue.changed`, `agents.changed`, `memory.changed`, `artifacts.changed`, `toast`.

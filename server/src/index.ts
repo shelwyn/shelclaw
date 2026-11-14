@@ -4,6 +4,7 @@ import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import { config } from './config.js'
+import { ensureSecretKey } from './crypto.js'
 import { closeDb, db } from './db.js'
 import { AppError } from './errors.js'
 import { registerRoutes } from './routes.js'
@@ -12,6 +13,7 @@ import {
   ensureProjectOrchestrators,
   ensureProjectWorkspaces,
   listQueuedChatIds,
+  migrateProviderSecrets,
 } from './store.js'
 import { now } from './util.js'
 
@@ -59,6 +61,8 @@ db.prepare("UPDATE chats SET status = 'idle' WHERE status = 'running'").run()
 // are repaired here without creating any user-facing default agents.
 ensureProjectOrchestrators()
 ensureProjectWorkspaces()
+ensureSecretKey()
+migrateProviderSecrets()
 
 await app.register(multipart, {
   limits: { fileSize: 25 * 1024 * 1024, files: 8 },

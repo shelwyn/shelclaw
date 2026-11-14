@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { decryptJson, decryptSecret, encryptJson, encryptSecret, isEncryptedSecret } from './crypto.js'
 import { db } from './db.js'
 import { AppError } from './errors.js'
 import type {
@@ -13,6 +14,8 @@ import type {
   ChatDetail,
   ChatFile,
   ContextUsage,
+  McpServer,
+  McpServerInternal,
   MemoryGraph,
   Message,
   Project,
@@ -32,17 +35,40 @@ type Row = Record<string, any>
 const s = (v: unknown) => (v == null ? '' : String(v))
 const n = (v: unknown) => Number(v ?? 0)
 
+function decryptProviderConfig(value: string): Record<string, unknown> {
+  if (!value) return {}
+  if (isEncryptedSecret(value)) {
+    try {
+      return decryptJson<Record<string, unknown>>(value, {})
+    } catch {
+      console.warn('A stored harness configuration could not be decrypted.')
+      return {}
+    }
+  }
+  return parseJson<Record<string, unknown>>(value, {})
+}
+
+function decryptProviderKey(value: string): string {
+  if (!value || !isEncryptedSecret(value)) return value
+  try {
+    return decryptSecret(value)
+  } catch {
+    console.warn('A stored harness credential could not be decrypted. Re-enter it in Settings.')
+    return ''
+  }
+}
+
 function mapProvider(r: Row): Provider {
   return {
     id: s(r.id),
     name: s(r.name),
     kind: s(r.kind) as ProviderKind,
     baseUrl: s(r.base_url),
-    apiKey: s(r.api_key),
+    apiKey: decryptProviderKey(s(r.api_key)),
     apiVersion: s(r.api_version),
     defaultModel: s(r.default_model),
     models: parseJson<string[]>(r.models, []),
-    config: parseJson<Record<string, unknown>>(r.config, {}),
+    config: decryptProviderConfig(s(r.config)),
     createdAt: n(r.created_at),
     updatedAt: n(r.updated_at),
   }
@@ -215,11 +241,11 @@ export function createProvider(input: Partial<Provider> & { name: string }): Pro
     input.name,
     input.kind || 'openai',
     input.baseUrl || '',
-    input.apiKey || '',
+    input.apiKey ? encryptSecret(input.apiKey) : '',
     input.apiVersion || '',
     input.defaultModel || '',
     JSON.stringify(input.models || []),
-    JSON.stringify(input.config || {}),
+    encryptJson(input.config || {}),
     t,
     t,
   )
@@ -243,11 +269,11 @@ export function updateProvider(providerId: string, input: Partial<Provider>): Pr
     merged.name,
     merged.kind,
     merged.baseUrl,
-    merged.apiKey,
+    merged.apiKey ? encryptSecret(merged.apiKey) : '',
     merged.apiVersion,
     merged.defaultModel,
     JSON.stringify(merged.models),
-    JSON.stringify(merged.config),
+    encryptJson(merged.config),
     merged.updatedAt,
     providerId,
   )
@@ -257,6 +283,19 @@ export function updateProvider(providerId: string, input: Partial<Provider>): Pr
 export function deleteProvider(providerId: string): boolean {
   const res = db.prepare('DELETE FROM providers WHERE id = ?').run(providerId)
   return Number(res.changes) > 0
+}
+
+/** Encrypt legacy plaintext harness credentials in place. */
+export function migrateProviderSecrets(): void {
+  const rows = db.prepare('SELECT id, api_key, config FROM providers').all() as Row[]
+  const update = db.prepare('UPDATE providers SET api_key = ?, config = ? WHERE id = ?')
+  for (const row of rows) {
+    const key = s(row.api_key)
+    const config = s(row.config) || '{}'
+    const nextKey = key && !isEncryptedSecret(key) ? encryptSecret(key) : key
+    const nextConfig = isEncryptedSecret(config) ? config : encryptJson(parseJson(config, {}))
+    if (nextKey !== key || nextConfig !== config) update.run(nextKey, nextConfig, s(row.id))
+  }
 }
 
 /* --------------------------------- workspaces --------------------------------- */
@@ -331,6 +370,198 @@ export function agentMemoryDir(projectId: string, agentId: string): string {
   fs.mkdirSync(dir, { recursive: true })
   fs.mkdirSync(path.join(root, 'embeddings', agentId), { recursive: true })
   return dir
+}
+
+/* ------------------------------- integrations -------------------------------- */
+
+function mapMcpServer(row: Row): McpServer {
+  const env = decryptJson<Record<string, string>>(s(row.env_cipher), {})
+  const headers = decryptJson<Record<string, string>>(s(row.headers_cipher), {})
+  return {
+    id: s(row.id),
+    name: s(row.name),
+    transport: s(row.transport) === 'http' ? 'http' : 'stdio',
+    command: s(row.command),
+    args: parseJson<string[]>(row.args, []),
+    url: s(row.url),
+    enabled: Boolean(n(row.enabled)),
+    hasEnv: Object.keys(env).length > 0,
+    envKeys: Object.keys(env).sort(),
+    hasHeaders: Object.keys(headers).length > 0,
+    headerKeys: Object.keys(headers).sort(),
+    createdAt: n(row.created_at),
+    updatedAt: n(row.updated_at),
+  }
+}
+
+function mcpRows(): Row[] {
+  return db
+    .prepare(
+      `SELECT m.*,
+        (SELECT ciphertext FROM integration_secrets s WHERE s.owner_type = 'mcp_server' AND s.owner_id = m.id AND s.name = 'env' LIMIT 1) AS env_cipher,
+        (SELECT ciphertext FROM integration_secrets s WHERE s.owner_type = 'mcp_server' AND s.owner_id = m.id AND s.name = 'headers' LIMIT 1) AS headers_cipher
+       FROM mcp_servers m
+       ORDER BY m.name COLLATE NOCASE ASC`,
+    )
+    .all() as Row[]
+}
+
+export function listMcpServers(): McpServer[] {
+  return mcpRows().map(mapMcpServer)
+}
+
+export function getMcpServer(serverId: string): McpServer | undefined {
+  const row = mcpRows().find((entry) => s(entry.id) === serverId)
+  return row ? mapMcpServer(row) : undefined
+}
+
+export function getMcpServerInternal(serverId: string): McpServerInternal | undefined {
+  const row = mcpRows().find((entry) => s(entry.id) === serverId)
+  if (!row) return undefined
+  const safe = mapMcpServer(row)
+  return {
+    ...safe,
+    env: decryptJson<Record<string, string>>(s(row.env_cipher), {}),
+    headers: decryptJson<Record<string, string>>(s(row.headers_cipher), {}),
+  }
+}
+
+function setIntegrationSecret(
+  ownerType: string,
+  ownerId: string,
+  name: string,
+  value: unknown,
+): void {
+  const t = now()
+  db.prepare(
+    `INSERT INTO integration_secrets (id, owner_type, owner_id, name, ciphertext, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(owner_type, owner_id, name) DO UPDATE SET ciphertext = excluded.ciphertext, updated_at = excluded.updated_at`,
+  ).run(id('secret'), ownerType, ownerId, name, encryptJson(value), t, t)
+}
+
+function deleteIntegrationSecret(ownerType: string, ownerId: string, name: string): void {
+  db.prepare('DELETE FROM integration_secrets WHERE owner_type = ? AND owner_id = ? AND name = ?').run(
+    ownerType,
+    ownerId,
+    name,
+  )
+}
+
+/** Generic encrypted secret storage for future integrations. Values never leave the server. */
+export function setIntegrationSecretJson(
+  ownerType: string,
+  ownerId: string,
+  name: string,
+  value: unknown,
+): void {
+  setIntegrationSecret(ownerType, ownerId, name, value)
+}
+
+export function getIntegrationSecretJson<T>(
+  ownerType: string,
+  ownerId: string,
+  name: string,
+  fallback: T,
+): T {
+  const row = db
+    .prepare(
+      'SELECT ciphertext FROM integration_secrets WHERE owner_type = ? AND owner_id = ? AND name = ?',
+    )
+    .get(ownerType, ownerId, name) as Row | undefined
+  return row ? decryptJson<T>(s(row.ciphertext), fallback) : fallback
+}
+
+function saveMcpSecrets(
+  serverId: string,
+  env: Record<string, string> | undefined,
+  headers: Record<string, string> | undefined,
+  clear: boolean,
+): void {
+  if (clear) {
+    deleteIntegrationSecret('mcp_server', serverId, 'env')
+    deleteIntegrationSecret('mcp_server', serverId, 'headers')
+    return
+  }
+  if (env !== undefined) {
+    if (Object.keys(env).length) setIntegrationSecret('mcp_server', serverId, 'env', env)
+    else deleteIntegrationSecret('mcp_server', serverId, 'env')
+  }
+  if (headers !== undefined) {
+    if (Object.keys(headers).length) setIntegrationSecret('mcp_server', serverId, 'headers', headers)
+    else deleteIntegrationSecret('mcp_server', serverId, 'headers')
+  }
+}
+
+export function createMcpServer(input: {
+  name: string
+  transport: 'stdio' | 'http'
+  command?: string
+  args?: string[]
+  url?: string
+  enabled?: boolean
+  env?: Record<string, string>
+  headers?: Record<string, string>
+}): McpServer {
+  const serverId = id('mcp')
+  const t = now()
+  db.prepare(
+    `INSERT INTO mcp_servers (id, name, transport, command, args, url, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    serverId,
+    input.name.trim(),
+    input.transport,
+    input.command || '',
+    JSON.stringify(input.args || []),
+    input.url || '',
+    input.enabled === false ? 0 : 1,
+    t,
+    t,
+  )
+  saveMcpSecrets(serverId, input.env || {}, input.headers || {}, false)
+  return getMcpServer(serverId)!
+}
+
+export function updateMcpServer(
+  serverId: string,
+  input: {
+    name?: string
+    transport?: 'stdio' | 'http'
+    command?: string
+    args?: string[]
+    url?: string
+    enabled?: boolean
+    env?: Record<string, string>
+    headers?: Record<string, string>
+    clearCredentials?: boolean
+  },
+): McpServer | undefined {
+  const existing = getMcpServer(serverId)
+  if (!existing) return undefined
+  db.prepare(
+    `UPDATE mcp_servers SET name=?, transport=?, command=?, args=?, url=?, enabled=?, updated_at=? WHERE id=?`,
+  ).run(
+    (input.name ?? existing.name).trim(),
+    input.transport ?? existing.transport,
+    input.command ?? existing.command,
+    JSON.stringify(input.args ?? existing.args),
+    input.url ?? existing.url,
+    (input.enabled ?? existing.enabled) ? 1 : 0,
+    now(),
+    serverId,
+  )
+  saveMcpSecrets(serverId, input.env, input.headers, Boolean(input.clearCredentials))
+  return getMcpServer(serverId)
+}
+
+export function deleteMcpServer(serverId: string): boolean {
+  db.prepare('DELETE FROM integration_secrets WHERE owner_type = ? AND owner_id = ?').run(
+    'mcp_server',
+    serverId,
+  )
+  const res = db.prepare('DELETE FROM mcp_servers WHERE id = ?').run(serverId)
+  return Number(res.changes) > 0
 }
 
 /* ---------------------------------- projects ---------------------------------- */

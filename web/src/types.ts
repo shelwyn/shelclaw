@@ -222,6 +222,30 @@ export interface Artifact {
   createdAt: number
 }
 
+export type McpTransport = 'stdio' | 'http'
+
+export interface McpServer {
+  id: string
+  name: string
+  transport: McpTransport
+  command: string
+  args: string[]
+  url: string
+  enabled: boolean
+  hasEnv: boolean
+  envKeys: string[]
+  hasHeaders: boolean
+  headerKeys: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface McpTool {
+  name: string
+  description: string
+  inputSchema?: unknown
+}
+
 export interface PreviewSheet {
   name: string
   rows: string[][]

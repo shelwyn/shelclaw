@@ -181,6 +181,29 @@ CREATE TABLE IF NOT EXISTS artifacts (
   UNIQUE(project_id, path)
 );
 
+CREATE TABLE IF NOT EXISTS mcp_servers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  transport TEXT NOT NULL DEFAULT 'stdio',
+  command TEXT NOT NULL DEFAULT '',
+  args TEXT NOT NULL DEFAULT '[]',
+  url TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS integration_secrets (
+  id TEXT PRIMARY KEY,
+  owner_type TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(owner_type, owner_id, name)
+);
+
 CREATE INDEX IF NOT EXISTS idx_chats_parent ON chats(parent_chat_id);
 CREATE INDEX IF NOT EXISTS idx_chats_project ON chats(project_id, last_message_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chats_updated ON chats(last_message_at DESC);
@@ -194,6 +217,8 @@ CREATE INDEX IF NOT EXISTS idx_agent_memory_project ON agent_memory(project_id, 
 CREATE INDEX IF NOT EXISTS idx_chat_files_chat ON chat_files(chat_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_queue_chat ON chat_queue(chat_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_artifacts_project ON artifacts(project_id, modified_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled ON mcp_servers(enabled, name);
+CREATE INDEX IF NOT EXISTS idx_integration_secrets_owner ON integration_secrets(owner_type, owner_id);
 `)
 
 // Lightweight migrations for databases created by earlier releases.

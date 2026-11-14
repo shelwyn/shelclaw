@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import type { Agent, Chat } from '../types.js'
+import type { Agent, Chat, McpToolSummary } from '../types.js'
 import type { ToolDefinition } from '../providers/types.js'
 
 export const SPAWN_TOOL = 'spawn_agents'
 export const SEND_TO_CHAT_TOOL = 'send_to_chat'
+export const MCP_CALL_TOOL = 'mcp_call'
 
 export const spawnArgsSchema = z.object({
   tasks: z
@@ -29,6 +30,44 @@ export const sendToChatArgsSchema = z.object({
 })
 
 export type SendToChatArgs = z.infer<typeof sendToChatArgsSchema>
+
+export const mcpCallArgsSchema = z.object({
+  server: z.string().min(1).max(200),
+  tool: z.string().min(1).max(200),
+  arguments: z.record(z.string(), z.unknown()).optional(),
+})
+
+export type McpCallArgs = z.infer<typeof mcpCallArgsSchema>
+
+export function buildMcpCallTool(tools: McpToolSummary[]): ToolDefinition {
+  const catalog = tools
+    .slice(0, 120)
+    .map(
+      (tool) =>
+        `- server "${tool.serverName}", tool "${tool.name}"${tool.description ? `: ${tool.description}` : ''}`,
+    )
+    .join('\n')
+  return {
+    name: MCP_CALL_TOOL,
+    description: `Call a tool exposed by a connected MCP server. Credentials are handled server-side and are never included in this conversation.
+
+Available MCP tools:
+${catalog || '(none)'}`,
+    parameters: {
+      type: 'object',
+      properties: {
+        server: { type: 'string', description: 'MCP server name or id.' },
+        tool: { type: 'string', description: 'Tool name from the catalog.' },
+        arguments: {
+          type: 'object',
+          description: 'Arguments object matching the MCP tool input schema.',
+        },
+      },
+      required: ['server', 'tool'],
+      additionalProperties: false,
+    },
+  }
+}
 
 export function buildSendToChatTool(chats: Chat[]): ToolDefinition {
   const list = chats

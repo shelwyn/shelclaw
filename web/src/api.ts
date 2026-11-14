@@ -172,10 +172,10 @@ export const api = {
   ) => request<McpServer>(`/api/mcp/${id}`, { method: 'PATCH', ...json(body) }),
   deleteMcpServer: (id: string) => request<{ ok: boolean }>(`/api/mcp/${id}`, { method: 'DELETE' }),
   testMcpServer: (id: string) =>
-    request<{ ok: boolean; tools: Array<{ name: string; description: string }> }>(
-      `/api/mcp/${id}/test`,
-      { method: 'POST' },
-    ),
+    request<{
+      ok: boolean
+      tools: Array<{ name: string; description: string; inputSchema?: unknown }>
+    }>(`/api/mcp/${id}/test`, { method: 'POST' }),
   fetchModels: (id: string) =>
     request<{ models: string[]; count: number }>(`/api/providers/${id}/models`, { method: 'POST' }),
   testProvider: (id: string) =>

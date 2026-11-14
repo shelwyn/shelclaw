@@ -16,6 +16,7 @@ import type {
   ContextUsage,
   McpServer,
   McpServerInternal,
+  McpTool,
   MemoryGraph,
   Message,
   Project,
@@ -390,6 +391,8 @@ function mapMcpServer(row: Row): McpServer {
     envKeys: Object.keys(env).sort(),
     hasHeaders: Object.keys(headers).length > 0,
     headerKeys: Object.keys(headers).sort(),
+    tools: parseJson<McpTool[]>(row.tools_json, []),
+    toolInstructions: parseJson<Record<string, string>>(row.tool_instructions, {}),
     createdAt: n(row.created_at),
     updatedAt: n(row.updated_at),
   }
@@ -504,12 +507,13 @@ export function createMcpServer(input: {
   enabled?: boolean
   env?: Record<string, string>
   headers?: Record<string, string>
+  toolInstructions?: Record<string, string>
 }): McpServer {
   const serverId = id('mcp')
   const t = now()
   db.prepare(
-    `INSERT INTO mcp_servers (id, name, description, transport, command, args, url, enabled, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO mcp_servers (id, name, description, transport, command, args, url, enabled, tools_json, tool_instructions, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)`,
   ).run(
     serverId,
     input.name.trim(),
@@ -519,6 +523,7 @@ export function createMcpServer(input: {
     JSON.stringify(input.args || []),
     input.url || '',
     input.enabled === false ? 0 : 1,
+    JSON.stringify(input.toolInstructions || {}),
     t,
     t,
   )
@@ -538,13 +543,14 @@ export function updateMcpServer(
     enabled?: boolean
     env?: Record<string, string>
     headers?: Record<string, string>
+    toolInstructions?: Record<string, string>
     clearCredentials?: boolean
   },
 ): McpServer | undefined {
   const existing = getMcpServer(serverId)
   if (!existing) return undefined
   db.prepare(
-    `UPDATE mcp_servers SET name=?, description=?, transport=?, command=?, args=?, url=?, enabled=?, updated_at=? WHERE id=?`,
+    `UPDATE mcp_servers SET name=?, description=?, transport=?, command=?, args=?, url=?, enabled=?, tool_instructions=?, updated_at=? WHERE id=?`,
   ).run(
     (input.name ?? existing.name).trim(),
     input.description ?? existing.description,
@@ -553,11 +559,20 @@ export function updateMcpServer(
     JSON.stringify(input.args ?? existing.args),
     input.url ?? existing.url,
     (input.enabled ?? existing.enabled) ? 1 : 0,
+    JSON.stringify(input.toolInstructions ?? existing.toolInstructions),
     now(),
     serverId,
   )
   saveMcpSecrets(serverId, input.env, input.headers, Boolean(input.clearCredentials))
   return getMcpServer(serverId)
+}
+
+export function setMcpTools(serverId: string, tools: McpTool[]): void {
+  db.prepare('UPDATE mcp_servers SET tools_json = ?, updated_at = ? WHERE id = ?').run(
+    JSON.stringify(tools),
+    now(),
+    serverId,
+  )
 }
 
 export function deleteMcpServer(serverId: string): boolean {

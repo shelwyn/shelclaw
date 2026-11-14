@@ -60,6 +60,7 @@ import {
   reorderProjects,
   safeProvider,
   setChatArchived,
+  setMcpTools,
   syncRuntimeArtifacts,
   clearQueuedMessages,
   updateAgent,
@@ -99,6 +100,7 @@ const mcpInput = z.object({
   enabled: z.boolean().optional(),
   env: mcpCredentialMap,
   headers: mcpCredentialMap,
+  toolInstructions: z.record(z.string().min(1).max(200), z.string().max(4000)).optional(),
   clearCredentials: z.boolean().optional(),
 })
 
@@ -731,9 +733,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!server) throw new AppError('MCP server not found.', 404)
     try {
       const tools = await listMcpTools(server)
+      setMcpTools(
+        server.id,
+        tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description || '',
+          inputSchema: tool.inputSchema,
+        })),
+      )
       return {
         ok: true,
-        tools: tools.map((tool) => ({ name: tool.name, description: tool.description || '' })),
+        tools: tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description || '',
+          inputSchema: tool.inputSchema,
+        })),
       }
     } catch (err) {
       throw new AppError(sanitizeMcpError(server, err), 400)

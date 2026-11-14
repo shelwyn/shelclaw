@@ -190,6 +190,8 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
   args TEXT NOT NULL DEFAULT '[]',
   url TEXT NOT NULL DEFAULT '',
   enabled INTEGER NOT NULL DEFAULT 1,
+  tools_json TEXT NOT NULL DEFAULT '[]',
+  tool_instructions TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -251,6 +253,12 @@ if (!hasColumn('projects', 'sort_order')) {
 }
 if (!hasColumn('mcp_servers', 'description')) {
   db.exec("ALTER TABLE mcp_servers ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+}
+if (!hasColumn('mcp_servers', 'tools_json')) {
+  db.exec("ALTER TABLE mcp_servers ADD COLUMN tools_json TEXT NOT NULL DEFAULT '[]'")
+}
+if (!hasColumn('mcp_servers', 'tool_instructions')) {
+  db.exec("ALTER TABLE mcp_servers ADD COLUMN tool_instructions TEXT NOT NULL DEFAULT '{}'")
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_chats_archived ON chats(archived_at)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id, created_at)')

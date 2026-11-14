@@ -54,7 +54,12 @@ export function buildMcpCallTool(tools: McpToolSummary[]): ToolDefinition {
     .map(([name, entry]) => {
       const lines = entry.tools
         .slice(0, 40)
-        .map((tool) => `  - tool "${tool.name}"${tool.description ? `: ${tool.description}` : ''}`)
+        .map(
+          (tool) =>
+            `  - tool "${tool.name}"${tool.description ? `: ${tool.description}` : ''}${
+              tool.agentInstruction ? `\n    agent instruction: ${tool.agentInstruction}` : ''
+            }`,
+        )
         .join('\n')
       const id = entry.tools[0]?.serverId || ''
       return `- server "${name}" (id: ${id})${entry.description ? ` — ${entry.description}` : ''}\n${lines}`

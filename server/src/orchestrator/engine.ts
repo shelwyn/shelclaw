@@ -209,8 +209,8 @@ function mcpProtocol(tools: McpToolSummary[]): string {
         .map((tool) => {
           const schema = tool.inputSchema ? JSON.stringify(tool.inputSchema).slice(0, 800) : ''
           return `  - tool "${tool.name}"${tool.description ? `: ${tool.description}` : ''}${
-            schema ? `\n    arguments schema: ${schema}` : ''
-          }`
+            tool.agentInstruction ? `\n    agent instruction: ${tool.agentInstruction}` : ''
+          }${schema ? `\n    arguments schema: ${schema}` : ''}`
         })
         .join('\n')
       const id = entry.tools[0]?.serverId || ''

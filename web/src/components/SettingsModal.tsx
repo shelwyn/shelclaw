@@ -1031,6 +1031,7 @@ interface McpFormState {
   enabled: boolean
   envText: string
   headersText: string
+  toolInstructions: Record<string, string>
   clearCredentials: boolean
 }
 
@@ -1045,6 +1046,7 @@ const emptyMcpForm = (): McpFormState => ({
   enabled: true,
   envText: '',
   headersText: '',
+  toolInstructions: {},
   clearCredentials: false,
 })
 
@@ -1060,6 +1062,7 @@ function formFromMcp(server: McpServer): McpFormState {
     enabled: server.enabled,
     envText: '',
     headersText: '',
+    toolInstructions: { ...server.toolInstructions },
     clearCredentials: false,
   }
 }
@@ -1093,6 +1096,8 @@ function McpSettings() {
   const [editing, setEditing] = useState<McpFormState | null>(null)
   const [saving, setSaving] = useState(false)
   const [toolsByServer, setToolsByServer] = useState<Record<string, string[]>>({})
+  const editingServer = editing?.id ? servers.find((server) => server.id === editing.id) : undefined
+  const editingTools = editingServer?.tools || []
 
   const load = async () => {
     setLoading(true)
@@ -1133,6 +1138,7 @@ function McpSettings() {
           args,
           url: editing.url,
           enabled: editing.enabled,
+          toolInstructions: editing.toolInstructions,
           ...(editing.envText.trim() ? { env } : {}),
           ...(editing.headersText.trim() ? { headers } : {}),
           clearCredentials: editing.clearCredentials,
@@ -1147,6 +1153,7 @@ function McpSettings() {
           args,
           url: editing.url,
           enabled: editing.enabled,
+          toolInstructions: editing.toolInstructions,
           env,
           headers,
         })
@@ -1167,6 +1174,7 @@ function McpSettings() {
       const result = await api.testMcpServer(server.id)
       const names = result.tools.map((tool) => tool.name)
       setToolsByServer((current) => ({ ...current, [server.id]: names }))
+      await load()
       toast(
         'success',
         `${server.name}: connected · ${names.length} tool${names.length === 1 ? '' : 's'}${
@@ -1178,6 +1186,12 @@ function McpSettings() {
     } finally {
       setTesting('')
     }
+  }
+
+  const discoverEditingTools = async () => {
+    const server = editingServer
+    if (!server) return
+    await runTest(server)
   }
 
   const remove = async () => {
@@ -1264,6 +1278,13 @@ function McpSettings() {
                       {server.description}
                     </div>
                   ) : null}
+                  <div className="mt-1 flex flex-wrap gap-x-2 text-[9.5px] text-faint">
+                    <span>{server.tools.length} tools discovered</span>
+                    <span>
+                      {Object.values(server.toolInstructions).filter((value) => value.trim()).length}{' '}
+                      tool instructions
+                    </span>
+                  </div>
                   {server.envKeys.length || server.headerKeys.length ? (
                     <div className="mt-1 truncate text-[9.5px] text-faint">
                       Keys: {[...server.envKeys, ...server.headerKeys].join(', ')}
@@ -1495,6 +1516,67 @@ function McpSettings() {
                 Remove all stored credentials for this server
               </label>
             ) : null}
+
+            <div className="rounded-lg border border-line bg-panel2/30 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-[11.5px] font-medium text-ink">Tool instructions</div>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-faint">
+                    Discover the tools first, then tell the Orchestrator and agents what each tool
+                    should be used for.
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void discoverEditingTools()}
+                  disabled={!editing.id || Boolean(testing)}
+                  loading={Boolean(testing) && testing === editing.id}
+                >
+                  <RefreshCw className="h-3 w-3" /> Discover tools
+                </Button>
+              </div>
+
+              {editingTools.length ? (
+                <div className="mt-2.5 space-y-2">
+                  {editingTools.map((tool) => (
+                    <div key={tool.name} className="rounded-md border border-line bg-panel p-2">
+                      <div className="font-mono text-[11px] font-medium text-ink">{tool.name}</div>
+                      {tool.description ? (
+                        <div className="mt-0.5 text-[10px] leading-relaxed text-faint">
+                          {tool.description}
+                        </div>
+                      ) : null}
+                      <Textarea
+                        value={editing.toolInstructions[tool.name] || ''}
+                        onChange={(event) =>
+                          setEditing((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  toolInstructions: {
+                                    ...current.toolInstructions,
+                                    [tool.name]: event.target.value,
+                                  },
+                                }
+                              : current,
+                          )
+                        }
+                        rows={2}
+                        placeholder={`Use ${tool.name} when…`}
+                        className="mt-1.5 text-[11.5px]"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-2 rounded-md border border-dashed border-line px-3 py-3 text-[10.5px] text-faint">
+                  {editing.id
+                    ? 'No tools discovered yet. Click Discover tools.'
+                    : 'Save this server first, then reopen it to discover tools.'}
+                </div>
+              )}
+            </div>
 
             <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted">
               <input

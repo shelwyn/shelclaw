@@ -301,6 +301,7 @@ export async function mcpToolSummaries(
     serverDescription: server.description,
     name: tool.name,
     description: tool.description || '',
+    agentInstruction: server.toolInstructions[tool.name] || '',
     inputSchema: tool.inputSchema,
   }))
 }

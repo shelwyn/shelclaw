@@ -237,6 +237,8 @@ export interface McpServer {
   envKeys: string[]
   hasHeaders: boolean
   headerKeys: string[]
+  tools: McpTool[]
+  toolInstructions: Record<string, string>
   createdAt: number
   updatedAt: number
 }

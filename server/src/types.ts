@@ -226,8 +226,16 @@ export interface McpServer {
   envKeys: string[]
   hasHeaders: boolean
   headerKeys: string[]
+  tools: McpTool[]
+  toolInstructions: Record<string, string>
   createdAt: number
   updatedAt: number
+}
+
+export interface McpTool {
+  name: string
+  description: string
+  inputSchema?: unknown
 }
 
 export interface McpServerSecrets {
@@ -246,6 +254,7 @@ export interface McpToolSummary {
   serverDescription: string
   name: string
   description: string
+  agentInstruction: string
   inputSchema: unknown
 }
 

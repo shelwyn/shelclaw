@@ -1,8 +1,9 @@
 import { z } from 'zod'
-import type { Agent } from '../types.js'
+import type { Agent, Chat } from '../types.js'
 import type { ToolDefinition } from '../providers/types.js'
 
 export const SPAWN_TOOL = 'spawn_agents'
+export const SEND_TO_CHAT_TOOL = 'send_to_chat'
 
 export const spawnArgsSchema = z.object({
   tasks: z
@@ -20,6 +21,48 @@ export const spawnArgsSchema = z.object({
 })
 
 export type SpawnArgs = z.infer<typeof spawnArgsSchema>
+
+export const sendToChatArgsSchema = z.object({
+  chat: z.string().min(1).max(200),
+  message: z.string().min(1),
+  title: z.string().max(160).optional(),
+})
+
+export type SendToChatArgs = z.infer<typeof sendToChatArgsSchema>
+
+export function buildSendToChatTool(chats: Chat[]): ToolDefinition {
+  const list = chats
+    .slice(0, 40)
+    .map((chat) => `- "${chat.title}" (id: ${chat.id}, agent id: ${chat.agentId || 'none'})`)
+    .join('\n')
+
+  return {
+    name: SEND_TO_CHAT_TOOL,
+    description: `Send a message or task to an existing chat in this project. Use this to command another chat or agent directly instead of creating a new sub-agent chat. The target run starts in parallel (or is queued if that chat is already running). The message must be self-contained.
+
+Available chats:
+${list || '(none)'}`,
+    parameters: {
+      type: 'object',
+      properties: {
+        chat: {
+          type: 'string',
+          description: 'Target chat id or exact title from the list above.',
+        },
+        message: {
+          type: 'string',
+          description: 'Complete instruction for the target chat. It cannot see this conversation.',
+        },
+        title: {
+          type: 'string',
+          description: 'Optional title if the target chat should be renamed.',
+        },
+      },
+      required: ['chat', 'message'],
+      additionalProperties: false,
+    },
+  }
+}
 
 export function buildSpawnTool(agents: Agent[]): ToolDefinition {
   const roster = agents

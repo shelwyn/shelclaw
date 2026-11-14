@@ -31,7 +31,7 @@ export function Toasts() {
                 toast.level === 'error'
                   ? 'text-danger'
                   : toast.level === 'success'
-                    ? 'text-success'
+                    ? 'text-ink'
                     : 'text-accent',
               )}
             />

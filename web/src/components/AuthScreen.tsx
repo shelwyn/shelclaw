@@ -32,16 +32,8 @@ export function AuthScreen() {
       <div className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[720px] -translate-x-1/2 rounded-full bg-accent/10 blur-[110px]" />
 
       <div className="relative w-full max-w-[400px]">
-        <div className="mb-6 flex items-center justify-center gap-3">
-          <div className="logo-mark flex h-10 w-10 items-center justify-center rounded-xl text-white">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M12 3 4.5 7.2v9.6L12 21l7.5-4.2V7.2L12 3Z" strokeLinejoin="round" />
-              <path d="m4.8 7.4 7.2 4.1 7.2-4.1M12 11.5V21" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <div>
-            <div className="text-[17px] font-semibold tracking-[-0.02em] text-ink">OpenCodex</div>
-          </div>
+        <div className="mb-6 flex items-center justify-center">
+          <div className="text-[17px] font-semibold tracking-[-0.02em] text-ink">OpenCodex</div>
         </div>
 
         <div className="rounded-2xl border border-line bg-panel p-5 shadow-[0_24px_80px_-30px_rgba(0,0,0,0.35)]">

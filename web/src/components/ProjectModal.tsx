@@ -3,11 +3,9 @@ import { useState } from 'react'
 import { api } from '../api'
 import { useAppStore } from '../store'
 import type { Project } from '../types'
-import { AGENT_COLORS, pickColor } from '../lib/colors'
 import {
   Avatar,
   Button,
-  cn,
   ConfirmDialog,
   Field,
   Input,
@@ -32,7 +30,7 @@ export function ProjectModal({ projectId }: { projectId?: string }) {
   const [form, setForm] = useState({
     name: existing?.name || '',
     description: existing?.description || '',
-    color: existing?.color || pickColor(Date.now() + 3),
+    color: existing?.color || '#111111',
     systemPrompt: existing?.systemPrompt || '',
     workspacePath: existing?.workspacePath || '',
   })
@@ -124,14 +122,7 @@ export function ProjectModal({ projectId }: { projectId?: string }) {
     >
       <div className="space-y-4">
         <div className="flex items-center gap-3 rounded-xl border border-line bg-panel2/40 p-3">
-          <span
-            className="flex h-9 w-9 items-center justify-center rounded-lg border"
-            style={{
-              backgroundColor: `${form.color}1f`,
-              borderColor: `${form.color}3d`,
-              color: form.color,
-            }}
-          >
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-panel2 text-ink">
             <FolderKanban className="h-4 w-4" />
           </span>
           <div className="min-w-0 flex-1">
@@ -158,24 +149,6 @@ export function ProjectModal({ projectId }: { projectId?: string }) {
             onChange={(event) => update('description', event.target.value)}
             placeholder="What this project is about"
           />
-        </Field>
-
-        <Field label="Color">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {AGENT_COLORS.map((color) => (
-              <button
-                key={color}
-                type="button"
-                onClick={() => update('color', color)}
-                className={cn(
-                  'h-5 w-5 rounded-full border-2 transition-transform hover:scale-110',
-                  form.color === color ? 'border-ink' : 'border-transparent',
-                )}
-                style={{ backgroundColor: color }}
-                aria-label={`Use color ${color}`}
-              />
-            ))}
-          </div>
         </Field>
 
         <Field

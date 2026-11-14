@@ -31,7 +31,7 @@ function TaskStatusIcon({ status }: { status: Task['status'] }) {
     case 'queued':
       return <Clock className="h-3.5 w-3.5 text-faint" />
     case 'done':
-      return <Check className="h-3.5 w-3.5 text-success" />
+      return <Check className="h-3.5 w-3.5 text-ink" />
     case 'error':
       return <X className="h-3.5 w-3.5 text-danger" />
     case 'cancelled':
@@ -101,7 +101,7 @@ function TaskNode({
                 <span className="inline-flex items-center gap-1">
                   <span
                     className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: agent.color }}
+                    style={{ backgroundColor: 'var(--ink)' }}
                   />
                   {agent.name}
                 </span>
@@ -357,7 +357,7 @@ export function Inspector() {
                         ? 'border-accent/25 bg-accent/10 text-accent'
                         : failed.length
                           ? 'border-danger/25 bg-danger/10 text-danger'
-                          : 'border-success/25 bg-success/10 text-success',
+                          : 'border-success/25 bg-ink/10 text-ink',
                     )}
                   >
                     <span
@@ -367,7 +367,7 @@ export function Inspector() {
                           ? 'bg-accent pulse-soft'
                           : failed.length
                             ? 'bg-danger'
-                            : 'bg-success',
+                            : 'bg-ink',
                       )}
                     />
                     {isRunning ? 'running' : failed.length ? 'partial' : tasks.length ? 'done' : 'idle'}
@@ -401,7 +401,7 @@ export function Inspector() {
                       <div
                         className={cn(
                           'h-full rounded-full transition-all duration-500',
-                          failed.length ? 'bg-danger' : isRunning ? 'bg-accent' : 'bg-success',
+                          failed.length ? 'bg-danger' : isRunning ? 'bg-accent' : 'bg-ink',
                         )}
                         style={{ width: `${Math.max(progress, isRunning ? 6 : 0)}%` }}
                       />

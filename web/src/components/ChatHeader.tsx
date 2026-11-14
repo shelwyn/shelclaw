@@ -8,6 +8,7 @@ import {
   Cpu,
   FolderKanban,
   FolderOpen,
+  Link2,
   Menu,
   MoreHorizontal,
   Moon,
@@ -255,6 +256,7 @@ export function ChatHeader() {
   const openModal = useAppStore((state) => state.openModal)
   const toggleTheme = useAppStore((state) => state.toggleTheme)
   const theme = useAppStore((state) => state.theme)
+  const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed)
   const chat = useAppStore((state) => state.detail?.chat || null)
   const usage = useAppStore((state) => state.detail?.usage)
   const context = useAppStore((state) => state.detail?.context)
@@ -272,6 +274,12 @@ export function ChatHeader() {
   const agent = agents.find((entry) => entry.id === chat?.agentId)
   const project = projects.find((entry) => entry.id === chat?.projectId)
   const parent = chats.find((entry) => entry.id === chat?.parentChatId)
+  const orchestratorChat = chats
+    .filter(
+      (entry) =>
+        entry.projectId === chat?.projectId && entry.kind === 'root' && !entry.archivedAt,
+    )
+    .sort((a, b) => b.lastMessageAt - a.lastMessageAt)[0]
   const running = Boolean(chat && activeRuns.some((run) => run.chatId === chat.id && run.status === 'running'))
 
   useEffect(() => {
@@ -290,7 +298,12 @@ export function ChatHeader() {
   const childrenCount = chats.filter((entry) => entry.parentChatId === chat.id).length
 
   return (
-    <header className="relative z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-panel/80 px-3 backdrop-blur-sm sm:px-4">
+    <header
+      className={cn(
+        'relative z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-panel/80 px-3 backdrop-blur-sm sm:px-4',
+        sidebarCollapsed && 'md:pl-14',
+      )}
+    >
       <button
         type="button"
         onClick={() => setSidebarOpen(true)}
@@ -309,6 +322,18 @@ export function ChatHeader() {
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           <span className="hidden max-w-[110px] truncate sm:inline">{parent?.title || 'Parent'}</span>
+        </button>
+      ) : null}
+
+      {chat.kind !== 'root' && orchestratorChat && orchestratorChat.id !== chat.id ? (
+        <button
+          type="button"
+          onClick={() => void openChat(orchestratorChat.id)}
+          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-1.5 text-[11.5px] text-muted hover:bg-panel2 hover:text-ink"
+          title="Open the Orchestrator chat"
+        >
+          <Link2 className="h-3.5 w-3.5" />
+          <span className="hidden max-w-[110px] truncate sm:inline">Orchestrator</span>
         </button>
       ) : null}
 
@@ -355,7 +380,7 @@ export function ChatHeader() {
             <span className="inline-flex items-center gap-1">
               <span
                 className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: agent.color }}
+                style={{ backgroundColor: 'var(--ink)' }}
               />
               {agent.name}
             </span>

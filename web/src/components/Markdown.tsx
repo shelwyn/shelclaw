@@ -35,7 +35,7 @@ function CodeBlock({ children }: { children: ReactNode }) {
           onClick={() => void copy()}
           className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-faint transition-colors hover:bg-panel2 hover:text-ink"
         >
-          {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+          {copied ? <Check className="h-3 w-3 text-ink" /> : <Copy className="h-3 w-3" />}
           {copied ? 'copied' : 'copy'}
         </button>
       </div>

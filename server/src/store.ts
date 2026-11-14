@@ -61,6 +61,8 @@ function mapProject(r: Row): Project {
     systemPrompt: s(r.system_prompt),
     workspacePath: s(r.workspace_path),
     color: s(r.color),
+    pinned: Boolean(n(r.pinned)),
+    sortOrder: n(r.sort_order),
     createdAt: n(r.created_at),
     updatedAt: n(r.updated_at),
   }
@@ -334,7 +336,13 @@ export function agentMemoryDir(projectId: string, agentId: string): string {
 /* ---------------------------------- projects ---------------------------------- */
 
 export function listProjects(): Project[] {
-  return (db.prepare('SELECT * FROM projects ORDER BY updated_at DESC').all() as Row[]).map(mapProject)
+  return (
+    db
+      .prepare(
+        'SELECT * FROM projects ORDER BY pinned DESC, sort_order ASC, updated_at DESC',
+      )
+      .all() as Row[]
+  ).map(mapProject)
 }
 
 export function getProject(projectId: string): Project | undefined {
@@ -346,15 +354,17 @@ export function createProject(input: Partial<Project> & { name: string }): Proje
   const t = now()
   const projectId = input.id || id('proj')
   const workspacePath = resolveWorkspacePath(input.workspacePath)
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS n FROM projects').get() as Row
   db.prepare(
-    `INSERT INTO projects (id, name, description, system_prompt, workspace_path, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO projects (id, name, description, system_prompt, workspace_path, color, pinned, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
   ).run(
     projectId,
     input.name,
     input.description || '',
     input.systemPrompt || '',
     workspacePath,
-    input.color || '#6d5efc',
+    input.color || '#111111',
+    n(maxOrder.n) + 1,
     t,
     t,
   )
@@ -387,17 +397,32 @@ export function updateProject(projectId: string, input: Partial<Project>): Proje
 
   const merged = { ...existing, ...input, workspacePath, updatedAt: now() }
   db.prepare(
-    `UPDATE projects SET name=?, description=?, system_prompt=?, workspace_path=?, color=?, updated_at=? WHERE id=?`,
+    `UPDATE projects SET name=?, description=?, system_prompt=?, workspace_path=?, color=?, pinned=?, sort_order=?, updated_at=? WHERE id=?`,
   ).run(
     merged.name,
     merged.description,
     merged.systemPrompt,
     merged.workspacePath,
     merged.color,
+    merged.pinned ? 1 : 0,
+    merged.sortOrder ?? existing.sortOrder,
     merged.updatedAt,
     projectId,
   )
   return getProject(projectId)
+}
+
+export function reorderProjects(ids: string[]): Project[] {
+  const update = db.prepare('UPDATE projects SET sort_order = ? WHERE id = ?')
+  db.exec('BEGIN')
+  try {
+    ids.forEach((projectId, index) => update.run(index + 1, projectId))
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
+  }
+  return listProjects()
 }
 
 export function deleteProject(projectId: string): boolean {

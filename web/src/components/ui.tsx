@@ -248,9 +248,9 @@ export function Avatar({
         className,
       )}
       style={{
-        backgroundColor: color ? `${color}1f` : 'var(--panel2)',
-        borderColor: color ? `${color}3d` : 'var(--line)',
-        color: color || 'var(--muted)',
+        backgroundColor: 'var(--panel2)',
+        borderColor: 'var(--line-strong)',
+        color: 'var(--ink)',
       }}
       title={name}
     >

@@ -34,7 +34,7 @@ function OrchestrationBar() {
       <span
         className={cn(
           'h-1.5 w-1.5 rounded-full',
-          running.length ? 'bg-accent pulse-soft' : failed.length ? 'bg-danger' : 'bg-success',
+          running.length ? 'bg-accent pulse-soft' : failed.length ? 'bg-danger' : 'bg-ink',
         )}
       />
       <span className="font-medium text-ink">Orchestration</span>
@@ -51,7 +51,7 @@ function OrchestrationBar() {
           <span className="text-faint">·</span>
           <span
             className="h-1 w-1 rounded-full"
-            style={{ backgroundColor: currentAgent.color }}
+            style={{ backgroundColor: 'var(--ink)' }}
           />
           {currentAgent.name}: {current.title}
         </span>

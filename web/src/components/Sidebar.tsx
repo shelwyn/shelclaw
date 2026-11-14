@@ -5,11 +5,15 @@ import {
   ChevronDown,
   ChevronRight,
   CornerDownRight,
+  Folder,
   FolderKanban,
+  FolderOpen,
   MessageSquare,
   Moon,
-  Package,
+  PanelLeftClose,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   Search,
   Settings,
@@ -17,7 +21,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../store'
 import type { Agent, Chat, Project, UsageTotals } from '../types'
@@ -32,6 +36,7 @@ function ChatRow({
   unread,
   onClick,
   onDelete,
+  onRename,
 }: {
   chat: Chat
   depth: number
@@ -40,8 +45,22 @@ function ChatRow({
   unread: boolean
   onClick: () => void
   onDelete: () => void
+  onRename: (title: string) => void
 }) {
   const running = chat.status === 'running'
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(chat.title)
+
+  useEffect(() => {
+    if (!editing) setTitle(chat.title)
+  }, [chat.title, editing])
+
+  const save = () => {
+    setEditing(false)
+    const next = title.trim()
+    if (next && next !== chat.title) onRename(next)
+  }
+
   return (
     <div
       className={cn(
@@ -50,33 +69,58 @@ function ChatRow({
       )}
       style={depth > 0 ? { paddingLeft: 4 + depth * 12 } : undefined}
     >
+      {editing ? (
+        <input
+          autoFocus
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          onBlur={save}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') save()
+            if (event.key === 'Escape') {
+              setEditing(false)
+              setTitle(chat.title)
+            }
+          }}
+          className="my-1 h-6 min-w-0 flex-1 rounded border border-line-strong bg-panel px-1.5 text-[12px] text-ink outline-none"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onClick}
+          onDoubleClick={() => setEditing(true)}
+          className="flex min-w-0 flex-1 items-center gap-2 py-[7px] pl-1.5 text-left"
+          title={chat.title}
+        >
+          {depth > 0 ? (
+            <CornerDownRight className="h-3 w-3 shrink-0 text-faint" />
+          ) : running ? (
+            <Spinner className="h-3.5 w-3.5 shrink-0 text-ink" />
+          ) : null}
+          <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{chat.title}</span>
+          {unread ? (
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink"
+              title="Unread"
+              aria-label="Unread"
+            />
+          ) : null}
+          <span className="shrink-0 text-[10px] tabular-nums text-faint">
+            {running ? 'working' : relativeTime(chat.lastMessageAt)}
+          </span>
+        </button>
+      )}
       <button
         type="button"
-        onClick={onClick}
-        className="flex min-w-0 flex-1 items-center gap-2 py-[7px] pl-1.5 text-left"
-        title={chat.title}
+        onClick={(event) => {
+          event.stopPropagation()
+          setEditing(true)
+        }}
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint opacity-100 transition-opacity hover:bg-panel hover:text-ink md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+        aria-label={`Rename ${chat.title}`}
+        title="Rename chat"
       >
-        {depth > 0 ? (
-          <CornerDownRight className="h-3 w-3 shrink-0 text-faint" />
-        ) : running ? (
-          <Spinner className="h-3.5 w-3.5 shrink-0 text-accent" />
-        ) : (
-          <span
-            className="h-1.5 w-1.5 shrink-0 rounded-full"
-            style={{ backgroundColor: agent?.color || 'var(--faint)' }}
-          />
-        )}
-        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{chat.title}</span>
-        {unread ? (
-          <span
-            className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
-            title="New activity"
-            aria-label="Unread"
-          />
-        ) : null}
-        <span className="shrink-0 text-[10px] tabular-nums text-faint">
-          {running ? 'live' : relativeTime(chat.lastMessageAt)}
-        </span>
+        <Pencil className="h-3 w-3" />
       </button>
       <button
         type="button"
@@ -84,7 +128,7 @@ function ChatRow({
           event.stopPropagation()
           onDelete()
         }}
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint opacity-100 transition-opacity hover:bg-danger/10 hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint opacity-100 transition-opacity hover:bg-panel hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
         aria-label={`Delete ${chat.title}`}
         title="Delete chat"
       >
@@ -105,6 +149,7 @@ function ChatBranch({
   setExpanded,
   openChat,
   onDelete,
+  onRename,
 }: {
   chat: Chat
   depth: number
@@ -116,6 +161,7 @@ function ChatBranch({
   setExpanded: Dispatch<SetStateAction<Record<string, boolean>>>
   openChat: (id: string) => void
   onDelete: (chat: Chat) => void
+  onRename: (chat: Chat, title: string) => void
 }) {
   const children = childrenByParent.get(chat.id) || []
   const isExpanded = expanded[chat.id] ?? true
@@ -131,6 +177,7 @@ function ChatBranch({
         unread={unreadChatIds.includes(chat.id)}
         onClick={() => openChat(chat.id)}
         onDelete={() => onDelete(chat)}
+        onRename={(title) => onRename(chat, title)}
       />
       {children.length ? (
         <div className="relative ml-[15px] border-l border-line/70 pl-1">
@@ -147,13 +194,14 @@ function ChatBranch({
               setExpanded={setExpanded}
               openChat={openChat}
               onDelete={onDelete}
+              onRename={onRename}
             />
           ))}
           {children.length > shown.length ? (
             <button
               type="button"
               onClick={() => setExpanded((current) => ({ ...current, [chat.id]: true }))}
-              className="flex items-center gap-1 px-2 py-1 text-[10.5px] text-faint hover:text-accent"
+              className="flex items-center gap-1 px-2 py-1 text-[10.5px] text-faint hover:text-ink"
             >
               <ChevronDown className="h-3 w-3" />
               {children.length - shown.length} more sub-agent
@@ -164,7 +212,7 @@ function ChatBranch({
             <button
               type="button"
               onClick={() => setExpanded((current) => ({ ...current, [chat.id]: false }))}
-              className="flex items-center gap-1 px-2 py-1 text-[10.5px] text-faint hover:text-accent"
+              className="flex items-center gap-1 px-2 py-1 text-[10.5px] text-faint hover:text-ink"
             >
               <ChevronRight className="h-3 w-3" />
               Collapse
@@ -179,56 +227,78 @@ function ChatBranch({
 function ProjectRow({
   project,
   active,
+  collapsed,
   agentCount,
   chatCount,
   onSelect,
+  onToggleCollapse,
   onEdit,
   onMemory,
-  onArtifacts,
   onDelete,
+  onTogglePin,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
   memoryActive,
   unread,
 }: {
   project: Project
   active: boolean
+  collapsed: boolean
   agentCount: number
   chatCount: number
   onSelect: () => void
+  onToggleCollapse: () => void
   onEdit: () => void
   onMemory: () => void
-  onArtifacts: () => void
   onDelete: () => void
+  onTogglePin: () => void
+  onDragStart: (event: React.DragEvent<HTMLDivElement>) => void
+  onDragOver: (event: React.DragEvent<HTMLDivElement>) => void
+  onDrop: (event: React.DragEvent<HTMLDivElement>) => void
+  onDragEnd: () => void
   memoryActive: boolean
   unread: boolean
 }) {
   return (
     <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       className={cn(
-        'group flex w-full items-center gap-1 rounded-lg pr-1 transition-colors',
+        'group flex w-full cursor-grab items-center gap-0.5 rounded-lg pr-1 transition-colors active:cursor-grabbing',
         active ? 'bg-accent-soft text-ink' : 'text-muted hover:bg-panel2 hover:text-ink',
       )}
     >
       <button
         type="button"
-        onClick={onSelect}
-        className="flex min-w-0 flex-1 items-center gap-1.5 py-[7px] pl-1.5 text-left"
-        title={project.workspacePath}
-        aria-expanded={active}
+        onClick={onToggleCollapse}
+        className="inline-flex h-6 w-5 shrink-0 items-center justify-center rounded text-faint hover:text-ink"
+        aria-label={collapsed ? `Expand ${project.name}` : `Collapse ${project.name}`}
+        title={collapsed ? 'Expand project' : 'Collapse project'}
       >
-        {active ? (
-          <ChevronDown className="h-3 w-3 shrink-0 text-faint" />
+        {active && !collapsed ? (
+          <ChevronDown className="h-3 w-3" />
         ) : (
-          <ChevronRight className="h-3 w-3 shrink-0 text-faint" />
+          <ChevronRight className="h-3 w-3" />
         )}
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ backgroundColor: project.color || 'var(--accent)' }}
-        />
+      </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex min-w-0 flex-1 items-center gap-2 py-[7px] pr-1 text-left"
+        title={project.workspacePath}
+        aria-expanded={active && !collapsed}
+      >
+        <Folder className="h-3.5 w-3.5 shrink-0 text-faint" />
         <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{project.name}</span>
         {unread ? (
           <span
-            className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
-            title="Unread agent activity"
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink"
+            title="Unread activity"
             aria-label="Unread activity"
           />
         ) : null}
@@ -238,52 +308,54 @@ function ProjectRow({
           </span>
         ) : null}
       </button>
-      {active ? (
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={onEdit}
-            className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
-            aria-label="Project settings"
-            title={`Project settings · ${project.workspacePath}`}
-          >
-            <Pencil className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onClick={onMemory}
-            className={cn(
-              'inline-flex h-6 w-6 items-center justify-center rounded',
-              memoryActive ? 'text-accent' : 'text-faint hover:bg-panel hover:text-ink',
-            )}
-            aria-label="Memory links"
-            title="Memory links"
-          >
-            <Brain className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={onArtifacts}
-            className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
-            aria-label="Project artifacts"
-            title="Project artifacts"
-          >
-            <Package className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ) : null}
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          onDelete()
-        }}
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint opacity-100 transition-opacity hover:bg-danger/10 hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
-        aria-label={`Delete ${project.name}`}
-        title="Delete project"
-      >
-        <Trash2 className="h-3 w-3" />
-      </button>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          onClick={onTogglePin}
+          className={cn(
+            'inline-flex h-6 w-6 items-center justify-center rounded hover:bg-panel hover:text-ink',
+            project.pinned ? 'text-ink' : 'text-faint opacity-100 md:opacity-0 md:group-hover:opacity-100',
+          )}
+          aria-label={project.pinned ? `Unpin ${project.name}` : `Pin ${project.name}`}
+          title={project.pinned ? 'Unpin project' : 'Pin project'}
+        >
+          {project.pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+        </button>
+        {active ? (
+          <>
+            <button
+              type="button"
+              onClick={onMemory}
+              className={cn(
+                'inline-flex h-6 w-6 items-center justify-center rounded hover:bg-panel hover:text-ink',
+                memoryActive ? 'text-ink' : 'text-faint',
+              )}
+              aria-label="Memory links"
+              title="Memory links"
+            >
+              <Brain className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
+              aria-label="Project settings"
+              title="Project settings"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          </>
+        ) : null}
+        <button
+          type="button"
+          onClick={onDelete}
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-faint opacity-100 transition-opacity hover:bg-panel hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+          aria-label={`Delete ${project.name}`}
+          title="Delete project"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </div>
     </div>
   )
 }
@@ -323,7 +395,7 @@ function AgentRow({
           <Avatar name={agent.name} color={agent.color} size="sm" />
           {busy ? (
             <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-panel bg-panel">
-              <Spinner className="h-2 w-2 text-accent" />
+              <Spinner className="h-2 w-2 text-ink" />
             </span>
           ) : null}
         </span>
@@ -332,7 +404,7 @@ function AgentRow({
             <span className="truncate text-[12.5px] font-medium text-ink">{agent.name}</span>
             {unread ? (
               <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink"
                 title="Finished — open to view"
                 aria-label="Unread"
               />
@@ -342,7 +414,7 @@ function AgentRow({
           <span
             className={cn(
               'mt-0.5 block truncate text-[10.5px]',
-              busy ? 'text-accent' : 'text-faint',
+              busy ? 'text-ink' : 'text-faint',
             )}
           >
             {busy
@@ -384,22 +456,25 @@ export function Sidebar() {
     search,
     archivedView,
     sidebarOpen,
+    sidebarCollapsed,
     theme,
     connected,
     setActiveProject,
     setSearch,
     setArchivedView,
     setSidebarOpen,
+    toggleSidebarCollapsed,
     openChat,
     openAgentChat,
     newChat,
     openMemory,
     openModal,
-    openArtifactsPanel,
     toggleTheme,
-    goHome,
     deleteChat,
+    renameChat,
     deleteProject,
+    reorderProjects,
+    toggleProjectPin,
     clearUnreadForAgent,
   } = useAppStore(
     useShallow((state) => ({
@@ -415,22 +490,25 @@ export function Sidebar() {
       search: state.search,
       archivedView: state.archivedView,
       sidebarOpen: state.sidebarOpen,
+      sidebarCollapsed: state.sidebarCollapsed,
       theme: state.theme,
       connected: state.connected,
       setActiveProject: state.setActiveProject,
       setSearch: state.setSearch,
       setArchivedView: state.setArchivedView,
       setSidebarOpen: state.setSidebarOpen,
+      toggleSidebarCollapsed: state.toggleSidebarCollapsed,
       openChat: state.openChat,
       openAgentChat: state.openAgentChat,
       newChat: state.newChat,
       openMemory: state.openMemory,
       openModal: state.openModal,
-      openArtifactsPanel: state.openArtifactsPanel,
       toggleTheme: state.toggleTheme,
-      goHome: state.goHome,
       deleteChat: state.deleteChat,
+      renameChat: state.renameChat,
       deleteProject: state.deleteProject,
+      reorderProjects: state.reorderProjects,
+      toggleProjectPin: state.toggleProjectPin,
       clearUnreadForAgent: state.clearUnreadForAgent,
     })),
   )
@@ -440,6 +518,8 @@ export function Sidebar() {
   const [deleting, setDeleting] = useState(false)
   const [projectDeleteTarget, setProjectDeleteTarget] = useState<Project | null>(null)
   const [deletingProject, setDeletingProject] = useState(false)
+  const [collapsedProjectId, setCollapsedProjectId] = useState('')
+  const [draggingProjectId, setDraggingProjectId] = useState('')
   const memoryActive = inspectorOpen && inspectorTab === 'memory'
   const activeProject = projects.find((project) => project.id === activeProjectId)
   const projectAgents = useMemo(
@@ -539,6 +619,31 @@ export function Sidebar() {
     openModal({ type: 'agent' })
   }
 
+  useEffect(() => {
+    setCollapsedProjectId('')
+  }, [activeProjectId])
+
+  const toggleProjectCollapse = (projectId: string) => {
+    if (projectId !== activeProjectId) {
+      setActiveProject(projectId)
+      setCollapsedProjectId('')
+      return
+    }
+    setCollapsedProjectId((current) => (current === projectId ? '' : projectId))
+  }
+
+  const moveProject = (targetId: string) => {
+    if (!draggingProjectId || draggingProjectId === targetId) return
+    const ids = projects.map((project) => project.id)
+    const from = ids.indexOf(draggingProjectId)
+    const to = ids.indexOf(targetId)
+    if (from < 0 || to < 0) return
+    ids.splice(to, 0, ...ids.splice(from, 1))
+    void reorderProjects(ids)
+  }
+
+  if (sidebarCollapsed && !sidebarOpen) return null
+
   const renderActiveProject = () => (
     <div className="mb-1 ml-[15px] border-l border-line/70 pb-1 pl-1.5">
       {orchestrator ? (
@@ -554,7 +659,7 @@ export function Sidebar() {
                 <Avatar name="O" color={orchestrator.color} size="sm" />
                 {busyFor(orchestrator.id) ? (
                   <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-panel bg-panel">
-                    <Spinner className="h-2 w-2 text-accent" />
+                    <Spinner className="h-2 w-2 text-ink" />
                   </span>
                 ) : null}
               </span>
@@ -565,7 +670,7 @@ export function Sidebar() {
                   </span>
                   {agentUnread(orchestrator.id) ? (
                     <span
-                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink"
                       title="Finished — open to view"
                       aria-label="Unread"
                     />
@@ -618,7 +723,7 @@ export function Sidebar() {
           <button
             type="button"
             onClick={createAgent}
-            className="mt-1 text-[10.5px] font-medium text-accent hover:underline"
+            className="mt-1 text-[10.5px] font-medium text-ink hover:underline"
           >
             Create agent
           </button>
@@ -663,7 +768,7 @@ export function Sidebar() {
           <button
             type="button"
             onClick={() => setArchivedView(false)}
-            className="text-[10px] font-medium text-accent hover:underline"
+            className="text-[10px] font-medium text-ink hover:underline"
           >
             Back to active
           </button>
@@ -711,6 +816,7 @@ export function Sidebar() {
               setExpanded={setExpanded}
               openChat={(id) => void openChat(id)}
               onDelete={setDeleteTarget}
+              onRename={(chat, title) => void renameChat(chat.id, title)}
             />
           ))}
         </div>
@@ -741,6 +847,56 @@ export function Sidebar() {
     </div>
   )
 
+  const renderProjectRow = (project: Project) => (
+    <div key={project.id}>
+      <ProjectRow
+        project={project}
+        active={project.id === activeProjectId}
+        collapsed={collapsedProjectId === project.id}
+        agentCount={
+          agents.filter((agent) => agent.projectId === project.id && !agent.isOrchestrator).length
+        }
+        chatCount={
+          chats.filter(
+            (chat) => chat.projectId === project.id && !chat.parentChatId && !chat.archivedAt,
+          ).length
+        }
+        onSelect={() => {
+          setActiveProject(project.id)
+          if (collapsedProjectId === project.id) setCollapsedProjectId('')
+        }}
+        onToggleCollapse={() => toggleProjectCollapse(project.id)}
+        onEdit={() => openModal({ type: 'project', id: project.id })}
+        onMemory={() => void openMemory(project.id)}
+        onDelete={() => setProjectDeleteTarget(project)}
+        onTogglePin={() => void toggleProjectPin(project.id)}
+        onDragStart={(event) => {
+          setDraggingProjectId(project.id)
+          event.dataTransfer.effectAllowed = 'move'
+          event.dataTransfer.setData('text/plain', project.id)
+        }}
+        onDragOver={(event) => {
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'move'
+        }}
+        onDrop={(event) => {
+          event.preventDefault()
+          moveProject(project.id)
+          setDraggingProjectId('')
+        }}
+        onDragEnd={() => setDraggingProjectId('')}
+        memoryActive={project.id === activeProjectId && memoryActive}
+        unread={projectUnread(project.id)}
+      />
+      {project.id === activeProjectId && collapsedProjectId !== project.id
+        ? renderActiveProject()
+        : null}
+    </div>
+  )
+
+  const pinnedProjects = projects.filter((project) => project.pinned)
+  const unpinnedProjects = projects.filter((project) => !project.pinned)
+
   return (
     <>
       {sidebarOpen ? (
@@ -757,23 +913,19 @@ export function Sidebar() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         )}
       >
-        <div className="flex items-center gap-2.5 px-3 pb-2 pt-3.5">
+        <div className="flex items-center gap-2 px-3 pb-2 pt-3.5">
+          <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.02em] text-ink">
+            {settings.workspaceName || 'OpenCodex'}
+          </span>
           <button
             type="button"
-            onClick={goHome}
-            className="logo-mark flex h-8 w-8 items-center justify-center rounded-[10px] text-white"
-            title="Back to home"
+            onClick={toggleSidebarCollapsed}
+            className="hidden h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink md:inline-flex"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
           >
-            <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M12 3 4.5 7.2v9.6L12 21l7.5-4.2V7.2L12 3Z" strokeLinejoin="round" />
-              <path d="m4.8 7.4 7.2 4.1 7.2-4.1M12 11.5V21" strokeLinejoin="round" />
-            </svg>
+            <PanelLeftClose className="h-4 w-4" />
           </button>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[13.5px] font-semibold tracking-[-0.01em] text-ink">
-              {settings.workspaceName || 'OpenCodex'}
-            </div>
-          </div>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
@@ -785,7 +937,7 @@ export function Sidebar() {
         </div>
 
         <div className="px-3 pb-2">
-          <Button variant="primary" size="md" className="w-full justify-start" onClick={createChat}>
+          <Button variant="secondary" size="md" className="w-full justify-start" onClick={createChat}>
             <Plus className="h-4 w-4" />
             New chat
           </Button>
@@ -840,36 +992,25 @@ export function Sidebar() {
               }
             />
           ) : (
-            <div className="space-y-0.5">
-              {projects.map((project) => (
-                <div key={project.id}>
-                  <ProjectRow
-                    project={project}
-                    active={project.id === activeProjectId}
-                    agentCount={
-                      agents.filter(
-                        (agent) => agent.projectId === project.id && !agent.isOrchestrator,
-                      ).length
-                    }
-                    chatCount={
-                      chats.filter(
-                        (chat) =>
-                          chat.projectId === project.id &&
-                          !chat.parentChatId &&
-                          !chat.archivedAt,
-                      ).length
-                    }
-                    onSelect={() => setActiveProject(project.id)}
-                    onEdit={() => openModal({ type: 'project', id: project.id })}
-                    onMemory={() => void openMemory(project.id)}
-                    onArtifacts={() => openArtifactsPanel(project.id)}
-                    onDelete={() => setProjectDeleteTarget(project)}
-                    memoryActive={project.id === activeProjectId && memoryActive}
-                    unread={projectUnread(project.id)}
-                  />
-                  {project.id === activeProjectId ? renderActiveProject() : null}
+            <div className="space-y-1">
+              {pinnedProjects.length ? (
+                <div>
+                  <div className="px-2 pb-0.5 pt-1 text-[9.5px] font-medium uppercase tracking-[0.08em] text-faint">
+                    Pinned
+                  </div>
+                  <div className="space-y-0.5">{pinnedProjects.map(renderProjectRow)}</div>
                 </div>
-              ))}
+              ) : null}
+              {unpinnedProjects.length ? (
+                <div>
+                  {pinnedProjects.length ? (
+                    <div className="px-2 pb-0.5 pt-2 text-[9.5px] font-medium uppercase tracking-[0.08em] text-faint">
+                      Projects
+                    </div>
+                  ) : null}
+                  <div className="space-y-0.5">{unpinnedProjects.map(renderProjectRow)}</div>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -884,7 +1025,7 @@ export function Sidebar() {
             Settings
             <span className="flex-1" />
             <span
-              className={cn('h-1.5 w-1.5 rounded-full', connected ? 'bg-success' : 'bg-danger')}
+              className={cn('h-1.5 w-1.5 rounded-full', connected ? 'bg-ink' : 'bg-danger')}
               title={connected ? 'Live updates connected' : 'Reconnecting…'}
             />
           </button>

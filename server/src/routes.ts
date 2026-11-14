@@ -51,6 +51,7 @@ import {
   listProjects,
   listSafeProviders,
   removeQueuedMessage,
+  reorderProjects,
   safeProvider,
   setChatArchived,
   syncRuntimeArtifacts,
@@ -83,6 +84,8 @@ const projectInput = z.object({
   systemPrompt: z.string().max(30000).optional(),
   workspacePath: z.string().max(2000).optional(),
   color: z.string().max(30).optional(),
+  pinned: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
 })
 
 const agentInput = z.object({
@@ -320,7 +323,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string }
     const updated = updateProject(id, parse(projectInput, req.body))
     if (!updated) throw new AppError('Project not found.', 404)
+    bus.emit('chats.changed', {})
     return updated
+  })
+
+  app.post('/api/projects/reorder', async (req) => {
+    const body = parse(z.object({ ids: z.array(z.string().max(100)).max(500) }), req.body)
+    const projects = reorderProjects(body.ids)
+    bus.emit('chats.changed', {})
+    return { projects }
   })
 
   app.delete('/api/projects/:id', async (req) => {

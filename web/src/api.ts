@@ -168,6 +168,11 @@ export const api = {
     request<Project>('/api/projects', { method: 'POST', ...json(body) }),
   updateProject: (id: string, body: Partial<Project>) =>
     request<Project>(`/api/projects/${id}`, { method: 'PATCH', ...json(body) }),
+  reorderProjects: (ids: string[]) =>
+    request<{ projects: Project[] }>('/api/projects/reorder', {
+      method: 'POST',
+      ...json({ ids }),
+    }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/api/projects/${id}`, { method: 'DELETE' }),
 
   createAgent: (body: Partial<Agent> & { projectId: string }) =>

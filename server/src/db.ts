@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS projects (
   system_prompt TEXT NOT NULL DEFAULT '',
   workspace_path TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL DEFAULT '#6d5efc',
+  pinned INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -214,6 +216,12 @@ if (!hasColumn('messages', 'metadata')) {
 }
 if (!hasColumn('projects', 'workspace_path')) {
   db.exec("ALTER TABLE projects ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''")
+}
+if (!hasColumn('projects', 'pinned')) {
+  db.exec('ALTER TABLE projects ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+}
+if (!hasColumn('projects', 'sort_order')) {
+  db.exec('ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0')
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_chats_archived ON chats(archived_at)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id, created_at)')

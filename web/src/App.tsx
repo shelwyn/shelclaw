@@ -1,4 +1,4 @@
-import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Loader2, PanelLeftOpen, RefreshCw } from 'lucide-react'
 import { useEffect } from 'react'
 import { applyTheme, useAppStore } from './store'
 import { AgentModal } from './components/AgentModal'
@@ -15,12 +15,7 @@ import { Button } from './components/ui'
 function Splash() {
   return (
     <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-5 bg-bg">
-      <div className="logo-mark flex h-12 w-12 items-center justify-center rounded-2xl text-white">
-        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.7">
-          <path d="M12 3 4.5 7.2v9.6L12 21l7.5-4.2V7.2L12 3Z" strokeLinejoin="round" />
-          <path d="m4.8 7.4 7.2 4.1 7.2-4.1M12 11.5V21" strokeLinejoin="round" />
-        </svg>
-      </div>
+      <div className="text-[15px] font-semibold tracking-[-0.02em] text-ink">OpenCodex</div>
       <div className="flex items-center gap-2 text-[11.5px] text-muted">
         <Loader2 className="spin h-3.5 w-3.5" />
         Starting your workspace…
@@ -60,6 +55,8 @@ export default function App() {
   const theme = useAppStore((state) => state.theme)
   const modal = useAppStore((state) => state.modal)
   const hasDetail = useAppStore((state) => Boolean(state.detail))
+  const sidebarCollapsed = useAppStore((state) => state.sidebarCollapsed)
+  const toggleSidebarCollapsed = useAppStore((state) => state.toggleSidebarCollapsed)
   const inspectorTab = useAppStore((state) => state.inspectorTab)
   const inspectorOpen = useAppStore((state) => state.inspectorOpen)
   const chatTitle = useAppStore((state) => state.detail?.chat.title || '')
@@ -107,6 +104,17 @@ export default function App() {
 
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-bg">
+      {sidebarCollapsed ? (
+        <button
+          type="button"
+          onClick={toggleSidebarCollapsed}
+          className="fixed left-3 top-3 z-50 hidden h-8 w-8 items-center justify-center rounded-md border border-line bg-panel text-muted shadow-sm hover:text-ink md:inline-flex"
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+      ) : null}
       <Sidebar />
       <ChatView />
       {(hasDetail || inspectorTab !== 'orchestration') && inspectorOpen ? <Inspector /> : null}

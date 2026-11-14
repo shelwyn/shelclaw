@@ -95,6 +95,7 @@ interface AppState {
   unreadChatIds: string[]
   artifactsChangedAt: number
   sidebarOpen: boolean
+  sidebarCollapsed: boolean
   theme: 'light' | 'dark'
   modal: ModalState
   toasts: Toast[]
@@ -111,7 +112,10 @@ interface AppState {
   newChat: (opts?: { agentId?: string; projectId?: string; title?: string }) => Promise<string | null>
   openAgentChat: (agentId: string) => Promise<string | null>
   deleteChat: (id: string) => Promise<void>
+  renameChat: (id: string, title: string) => Promise<void>
   deleteProject: (id: string) => Promise<void>
+  reorderProjects: (ids: string[]) => Promise<void>
+  toggleProjectPin: (id: string) => Promise<void>
   send: (content: string, fileIds?: string[]) => Promise<boolean>
   removeQueuedMessage: (id: string) => Promise<void>
   stop: () => Promise<void>
@@ -137,6 +141,7 @@ interface AppState {
   archiveChat: (id: string, archived: boolean) => Promise<void>
   toggleInspector: () => void
   setSidebarOpen: (open: boolean) => void
+  toggleSidebarCollapsed: () => void
   toggleTheme: () => void
   openModal: (modal: ModalState) => void
   closeModal: () => void
@@ -198,6 +203,14 @@ function persistUnreadChats(chatIds: string[]): void {
     localStorage.setItem('ocx.unread', JSON.stringify(chatIds))
   } catch {
     // ignore
+  }
+}
+
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem('ocx.sidebarCollapsed') === '1'
+  } catch {
+    return false
   }
 }
 
@@ -541,6 +554,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   unreadChatIds: typeof window !== 'undefined' ? loadUnreadChats() : [],
   artifactsChangedAt: 0,
   sidebarOpen: false,
+  sidebarCollapsed: typeof window !== 'undefined' ? loadSidebarCollapsed() : false,
   theme: initialTheme(),
   modal: null,
   toasts: [],
@@ -736,6 +750,49 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
       pushToast('success', 'Project deleted.')
+    } catch (err) {
+      pushToast('error', errorText(err))
+    }
+  },
+
+  renameChat: async (id: string, title: string) => {
+    const next = title.trim()
+    if (!next) return
+    try {
+      const chat = await api.patchChat(id, { title: next })
+      set((state) => ({
+        chats: upsertById(state.chats, chat),
+        detail:
+          state.detail && state.detail.chat.id === chat.id
+            ? { ...state.detail, chat }
+            : state.detail,
+      }))
+    } catch (err) {
+      pushToast('error', errorText(err))
+    }
+  },
+
+  reorderProjects: async (ids: string[]) => {
+    const byId = new Map(get().projects.map((project) => [project.id, project]))
+    const optimistic = ids
+      .map((id) => byId.get(id))
+      .filter((project): project is NonNullable<typeof project> => Boolean(project))
+    if (optimistic.length) set({ projects: optimistic })
+    try {
+      const result = await api.reorderProjects(ids)
+      set({ projects: result.projects })
+    } catch (err) {
+      pushToast('error', errorText(err))
+      void get().refresh()
+    }
+  },
+
+  toggleProjectPin: async (id: string) => {
+    const project = get().projects.find((entry) => entry.id === id)
+    if (!project) return
+    try {
+      await api.updateProject(id, { pinned: !project.pinned })
+      await get().refresh()
     } catch (err) {
       pushToast('error', errorText(err))
     }
@@ -999,6 +1056,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSearch: (search) => set({ search }),
   toggleInspector: () => set((state) => ({ inspectorOpen: !state.inspectorOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+
+  toggleSidebarCollapsed: () => {
+    set((state) => {
+      const next = !state.sidebarCollapsed
+      try {
+        localStorage.setItem('ocx.sidebarCollapsed', next ? '1' : '0')
+      } catch {
+        // ignore
+      }
+      return { sidebarCollapsed: next, sidebarOpen: false }
+    })
+  },
 
   toggleTheme: () => {
     const theme = get().theme === 'dark' ? 'light' : 'dark'

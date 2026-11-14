@@ -44,6 +44,8 @@ export interface Project {
   systemPrompt: string
   workspacePath: string
   color: string
+  pinned: boolean
+  sortOrder: number
   createdAt: number
   updatedAt: number
 }

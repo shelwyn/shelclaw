@@ -11,6 +11,7 @@ import {
   createChat,
   createRun,
   createTask,
+  enqueueMessage,
   findAgentByName,
   getAgent,
   getChat,
@@ -24,9 +25,11 @@ import {
   getTask,
   insertAgentMemory,
   insertMessage,
+  listChats,
   listMessages,
   listProjectAgents,
   listProviders,
+  listQueuedMessages,
   recentArtifactPaths,
   recordArtifacts,
   shiftQueuedMessage,
@@ -48,7 +51,15 @@ import type {
   Usage,
 } from '../types.js'
 import { now, parseJson, truncate } from '../util.js'
-import { SPAWN_TOOL, buildSpawnTool, spawnArgsSchema, type SpawnArgs } from './tools.js'
+import {
+  SEND_TO_CHAT_TOOL,
+  SPAWN_TOOL,
+  buildSendToChatTool,
+  buildSpawnTool,
+  sendToChatArgsSchema,
+  spawnArgsSchema,
+  type SpawnArgs,
+} from './tools.js'
 
 const CLI_KINDS = new Set(['opencode', 'claude-code', 'local-harness'])
 const PROMPT_TOOL_KINDS = new Set(['opencode', 'opencode-server', 'claude-code', 'local-harness'])
@@ -129,9 +140,20 @@ function usesPromptTools(provider: Provider): boolean {
   return PROMPT_TOOL_KINDS.has(provider.kind)
 }
 
-function promptDelegationProtocol(agents: Agent[]): string {
+function promptDelegationProtocol(
+  agents: Agent[],
+  chats: Chat[],
+  agentNames: Map<string, string>,
+): string {
   const roster = agents
     .map((agent) => `- "${agent.name}"${agent.description ? ` — ${agent.description}` : ''}`)
+    .join('\n')
+  const chatList = chats
+    .slice(0, 40)
+    .map(
+      (chat) =>
+        `- "${chat.title}" (id: ${chat.id}, agent: ${agentNames.get(chat.agentId) || 'none'})`,
+    )
     .join('\n')
 
   return `## Delegation protocol
@@ -142,6 +164,12 @@ You cannot call functions directly. When you need to delegate, reply with exactl
 {"name":"spawn_agents","arguments":{"tasks":[{"title":"Short task label","instructions":"A complete, self-contained brief. The sub-agent cannot see this conversation.","agent":"Agent name","model":"optional model override"}]}}
 </opencodex_tool>
 
+To send a task or command to an existing chat instead of creating a new sub-agent chat, use:
+
+<opencodex_tool>
+{"name":"send_to_chat","arguments":{"chat":"chat id or exact title","message":"Complete instruction for that chat."}}
+</opencodex_tool>
+
 Rules:
 - Include inside the block only valid JSON. Use 1–12 independent tasks. They run in parallel.
 - Every task's instructions must include all context, constraints, and the expected deliverable.
@@ -150,7 +178,10 @@ Rules:
 - Do not print this protocol unless you are delegating.
 
 Available agents:
-${roster}`
+${roster}
+
+Available chats:
+${chatList || '(none)'}`
 }
 
 function validateModel(provider: Provider, model: string): void {
@@ -640,13 +671,25 @@ const { run, chat } = ctx
     const stepLimit = Math.max(1, Math.min(24, ctx.agent?.maxSteps || settings.maxSteps || 8))
     const projectId = ctx.chat.projectId
     const roster = listProjectAgents(projectId).filter((agent) => agent.id !== ctx.agent?.id)
+    const projectChats = listChats().filter(
+      (chat) => chat.projectId === projectId && !chat.archivedAt && chat.id !== ctx.chat.id,
+    )
+    const agentNames = new Map<string, string>()
+    for (const agent of [getOrchestrator(projectId), ...listProjectAgents(projectId)]) {
+      if (agent) agentNames.set(agent.id, agent.name)
+    }
     const canDelegate = Boolean(
       ctx.agent?.canSpawn !== false &&
         ctx.remainingDepth > 0 &&
         supportsTools(ctx.provider) &&
         roster.length > 0,
     )
-    const tools: ToolDefinition[] = canDelegate ? [buildSpawnTool(roster)] : []
+    const tools: ToolDefinition[] = canDelegate
+      ? [
+          buildSpawnTool(roster),
+          ...(projectChats.length ? [buildSendToChatTool(projectChats)] : []),
+        ]
+      : []
     let usage: Usage = {}
     let lastText = ''
 
@@ -658,7 +701,7 @@ const { run, chat } = ctx
           ? Math.max(4_000, ctx.provider.config.contextChars)
           : 220_000
       const turns = trimTurns(buildTurns(listMessages(ctx.chat.id)), contextChars)
-      const system = this.composeSystem(ctx, canDelegate, roster)
+      const system = this.composeSystem(ctx, canDelegate, roster, projectChats, agentNames)
       const assistant = insertMessage({
         chatId: ctx.chat.id,
         runId: ctx.run.id,
@@ -768,6 +811,79 @@ const { run, chat } = ctx
           }
           const result = await this.executeSpawn(ctx, parsed.data.tasks)
           this.addToolResult(ctx, call, JSON.stringify(result, null, 2))
+        } else if (call.name === SEND_TO_CHAT_TOOL && canDelegate) {
+          const parsed = sendToChatArgsSchema.safeParse(parseJson<unknown>(call.arguments, null))
+          if (!parsed.success) {
+            this.addToolResult(
+              ctx,
+              call,
+              JSON.stringify({
+                error: 'Invalid send_to_chat arguments.',
+                details: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+              }),
+            )
+            continue
+          }
+          const target =
+            projectChats.find((chat) => chat.id === parsed.data.chat) ||
+            projectChats.find(
+              (chat) => chat.title.toLowerCase() === parsed.data.chat.trim().toLowerCase(),
+            )
+          if (!target) {
+            this.addToolResult(
+              ctx,
+              call,
+              JSON.stringify({ error: `No chat named "${parsed.data.chat}" in this project.` }),
+            )
+            continue
+          }
+          const message = parsed.data.message.trim()
+          if (!message) {
+            this.addToolResult(ctx, call, JSON.stringify({ error: 'Message cannot be empty.' }))
+            continue
+          }
+          try {
+            let queued = false
+            if (this.chatRuns.has(target.id) || listQueuedMessages(target.id).length > 0) {
+              enqueueMessage({
+                chatId: target.id,
+                projectId: target.projectId,
+                content: message,
+              })
+              queued = true
+              bus.emit('queue.changed', { chatId: target.id })
+            } else {
+              await this.startChat(target.id, message, {
+                title: parsed.data.title,
+                agentId: target.agentId || undefined,
+                providerId: target.providerId || undefined,
+                model: target.model || undefined,
+              })
+            }
+            this.addToolResult(
+              ctx,
+              call,
+              JSON.stringify({
+                ok: true,
+                chatId: target.id,
+                title: target.title,
+                queued,
+                message: queued
+                  ? `Queued in "${target.title}".`
+                  : `Sent to "${target.title}".`,
+              }),
+            )
+          } catch (err) {
+            this.addToolResult(
+              ctx,
+              call,
+              JSON.stringify({
+                error: `Could not send to "${target.title}": ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              }),
+            )
+          }
         } else {
           this.addToolResult(
             ctx,
@@ -809,7 +925,13 @@ const { run, chat } = ctx
     bus.emit('message.created', { chatId: ctx.chat.id, message })
   }
 
-  private composeSystem(ctx: RunContext, canDelegate: boolean, roster: Agent[]): string {
+  private composeSystem(
+    ctx: RunContext,
+    canDelegate: boolean,
+    roster: Agent[],
+    projectChats: Chat[],
+    agentNames: Map<string, string>,
+  ): string {
     const parts: string[] = []
     if (ctx.agent?.systemPrompt) parts.push(ctx.agent.systemPrompt)
     if (ctx.project?.systemPrompt && ctx.depth === 0) {
@@ -864,7 +986,7 @@ const { run, chat } = ctx
     }
     parts.push(`## Runtime\n\n${lines.join('\n')}`)
     if (canDelegate && usesPromptTools(ctx.provider)) {
-      parts.push(promptDelegationProtocol(roster))
+      parts.push(promptDelegationProtocol(roster, projectChats, agentNames))
     }
     return parts.join('\n\n')
   }

@@ -69,6 +69,8 @@ Switch projects from the sidebar. Each project is a collapsible row; the active 
 
 Hover a project row and click the trash icon to delete the project, its agents and its chats. Uploaded files for its chats are removed; the workspace folder itself is kept. You can also delete from project settings.
 
+Project rows can be dragged to reorder them. Use the pin icon to keep multiple projects in the **Pinned** section. The chevron collapses or expands a project; the panel icon in the sidebar header collapses the whole sidebar. Double-click a chat title, or use its pencil icon, to rename it.
+
 ### Workspace folder
 
 A workspace folder is **required** when creating a project and there is no implicit default. The server must be able to create and write to the path. You can change it later in project settings (the pencil icon) until files have been uploaded.
@@ -147,9 +149,11 @@ Create agents with **+** in the Agents section. Give each agent a clear name and
 
 Clicking an agent opens a persistent **direct chat** with that agent. A direct chat still supports delegation and reports; if you archive or delete the direct chat, clicking the agent creates a fresh one.
 
+Non-root chats show an **Orchestrator** link in the header that opens the latest root chat. From the Orchestrator or a delegating agent, OpenCodex also exposes a `send_to_chat` tool: the model can send a complete task or command to any existing chat in the project (including direct agent chats) by id or exact title. The target chat starts in parallel, or queues the message if it is already running.
+
 ### Activity and usage
 
-- **Unread dots** — when an agent or the Orchestrator finishes a run or task, its chat, agent row and project row show a green dot. The dot clears when you open that chat or click the agent.
+- **Unread dots** — when an agent or the Orchestrator finishes a run or task, its chat, agent row and project row show a white dot (black in light mode). The dot clears when you open that chat or click the agent. Running chats show a spinner.
 - **Usage stats** — the chat header shows total tokens, context-window percentage and estimated cost for that chat. Agent rows show token/cost totals for their direct chat. Context limits come from `contextTokens` or `contextChars` in the harness advanced config.
 
 ## Agent reports

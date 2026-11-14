@@ -3,13 +3,11 @@ import { useMemo, useState } from 'react'
 import { api } from '../api'
 import { useAppStore } from '../store'
 import type { Agent } from '../types'
-import { AGENT_COLORS, pickColor } from '../lib/colors'
 import { isHarnessKind } from '../lib/format'
 import {
   Avatar,
   Badge,
   Button,
-  cn,
   ConfirmDialog,
   Field,
   Input,
@@ -42,7 +40,7 @@ export function AgentModal({ agentId }: { agentId?: string }) {
     name: existing?.name || '',
     description: existing?.description || '',
     systemPrompt: existing?.systemPrompt || '',
-    color: existing?.color || pickColor(),
+    color: existing?.color || '#111111',
     providerId: existing?.providerId || '',
     model: existing?.model || '',
     maxDepth: existing?.maxDepth ?? 2,
@@ -170,32 +168,13 @@ export function AgentModal({ agentId }: { agentId?: string }) {
           ) : null}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <Field label="Name">
-            <Input
-              value={form.name}
-              onChange={(event) => update('name', event.target.value)}
-              placeholder="e.g. Security Reviewer"
-            />
-          </Field>
-          <Field label="Color">
-            <div className="flex h-9 flex-wrap items-center gap-1.5">
-              {AGENT_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  onClick={() => update('color', color)}
-                  className={cn(
-                    'h-5 w-5 rounded-full border-2 transition-transform hover:scale-110',
-                    form.color === color ? 'border-ink' : 'border-transparent',
-                  )}
-                  style={{ backgroundColor: color }}
-                  aria-label={`Use color ${color}`}
-                />
-              ))}
-            </div>
-          </Field>
-        </div>
+        <Field label="Name">
+          <Input
+            value={form.name}
+            onChange={(event) => update('name', event.target.value)}
+            placeholder="e.g. Security Reviewer"
+          />
+        </Field>
 
         <Field label="Description" hint="Shown to the orchestrator when choosing an agent.">
           <Input

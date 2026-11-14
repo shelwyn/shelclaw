@@ -4,6 +4,7 @@ import {
   Cpu,
   Download,
   ExternalLink,
+  HelpCircle,
   KeyRound,
   Pencil,
   Plug,
@@ -1693,6 +1694,7 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
   const [headersText, setHeadersText] = useState('')
   const [enabled, setEnabled] = useState(true)
   const [tools, setTools] = useState<string[]>([])
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const existing = servers.find((server) => server.name.toLowerCase() === 'activepieces')
 
@@ -1807,6 +1809,16 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
       <div className="rounded-lg border border-line bg-panel2/40 px-3 py-2.5 text-[10.5px] leading-relaxed text-muted">
         <div className="flex items-center gap-1.5 font-medium text-ink">
           <Workflow className="h-3.5 w-3.5" /> Activepieces engine
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
+            title="How to connect Activepieces"
+            aria-label="How to connect Activepieces"
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
+          </button>
         </div>
         Shelclaw stays the orchestrator. Build flows and connect services in the self-hosted
         Activepieces UI, then connect its MCP endpoint here. Agents call Activepieces tools through
@@ -1937,6 +1949,99 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
           </p>
         </div>
       )}
+
+      <Modal
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        title="Connect Activepieces"
+        subtitle="Self-host the engine, create a local admin account, and expose its MCP tools to Shelclaw."
+        size="md"
+        footer={
+          <Button variant="secondary" size="md" onClick={() => setHelpOpen(false)}>
+            Close
+          </Button>
+        }
+      >
+        <div className="space-y-4 text-[11.5px] leading-relaxed text-muted">
+          <div>
+            <div className="font-semibold text-ink">1. Start the engine</div>
+            <p className="mt-1">
+              During development, run only Activepieces:
+            </p>
+            <pre className="mt-1.5 rounded-md border border-line bg-panel2 px-2.5 py-2 font-mono text-[10.5px] text-ink">
+              {'./selfhost.sh activepieces'}
+            </pre>
+            <p className="mt-1.5">
+              For the full app + Activepieces stack, run <code className="font-mono">./selfhost.sh</code>.
+              The first run downloads images and can take a few minutes. Check progress with{' '}
+              <code className="font-mono">./selfhost.sh logs</code>.
+            </p>
+          </div>
+
+          <div>
+            <div className="font-semibold text-ink">2. Create a local account</div>
+            <p className="mt-1">
+              Open <a href="http://localhost:8080" target="_blank" rel="noreferrer" className="text-ink underline">http://localhost:8080</a>.
+              A self-hosted Activepieces does <strong className="text-ink">not</strong> require an
+              Activepieces cloud account. The first account you create becomes the platform
+              administrator. There is no default username or password.
+            </p>
+          </div>
+
+          <div>
+            <div className="font-semibold text-ink">3. Connect services and build flows</div>
+            <p className="mt-1">
+              In Activepieces, open <strong className="text-ink">Connections</strong> and connect the
+              apps you want agents to use. Build and test flows in the Activepieces builder. Shelclaw
+              does not embed the enterprise builder UI.
+            </p>
+          </div>
+
+          <div>
+            <div className="font-semibold text-ink">4. Enable the Activepieces MCP server</div>
+            <p className="mt-1">
+              In Activepieces, open <strong className="text-ink">Settings → MCP Server</strong>,
+              enable it, and copy the server URL and any required token/headers. This is the endpoint
+              Shelclaw will call.
+            </p>
+          </div>
+
+          <div>
+            <div className="font-semibold text-ink">5. Connect it in Shelclaw</div>
+            <ul className="mt-1 list-disc space-y-1 pl-4">
+              <li>Base URL: <code className="font-mono">http://localhost:8080</code></li>
+              <li>
+                MCP URL when Shelclaw runs on the host:{' '}
+                <code className="font-mono">http://localhost:8080/mcp</code>
+              </li>
+              <li>
+                MCP URL when Shelclaw runs in Docker:{' '}
+                <code className="font-mono">http://activepieces-app:80/mcp</code>
+              </li>
+              <li>Paste any required token/header, then click <strong className="text-ink">Connect Activepieces</strong>.</li>
+              <li>Click <strong className="text-ink">Test &amp; discover tools</strong>.</li>
+              <li>Open <strong className="text-ink">MCP Servers → Activepieces</strong> to add per-tool instructions.</li>
+            </ul>
+          </div>
+
+          <div>
+            <div className="font-semibold text-ink">6. Use it from chat</div>
+            <p className="mt-1">
+              Ask the Orchestrator or an agent to perform an operation such as sending an email,
+              creating an issue, or updating a spreadsheet. Matching Activepieces tools are available
+              through <code className="font-mono">mcp_call</code>; credentials stay server-side.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-line bg-panel2/40 px-3 py-2 text-[10.5px]">
+            <strong className="text-ink">Nothing on port 8080?</strong> Run{' '}
+            <code className="font-mono">./selfhost.sh activepieces</code>, then check{' '}
+            <code className="font-mono">./selfhost.sh status</code> and{' '}
+            <code className="font-mono">./selfhost.sh logs</code>. If the port is busy, set{' '}
+            <code className="font-mono">ACTIVEPIECES_PORT=8081</code> before starting.
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -411,6 +411,27 @@ Services and exposed ports:
 
 Generated secrets live in `.selfhost/activepieces.env` and `.selfhost/shelclaw.env` (gitignored). Back them up together with the Activepieces PostgreSQL volume and the `shelclaw-data` volume.
 
+### Activepieces during development
+
+Start only the Activepieces engine while running Shelclaw with hot reload:
+
+```bash
+# terminal 1
+./selfhost.sh activepieces
+# Activepieces: http://localhost:8080
+
+# terminal 2
+npm run dev
+# Shelclaw web: http://localhost:5173
+# Shelclaw API: http://localhost:8787
+```
+
+Open `http://localhost:8080`, create the first account, and it becomes the platform administrator. A self-hosted Activepieces does **not** require an Activepieces cloud account.
+
+For the full app + Activepieces stack, use `./selfhost.sh`. Check status/logs with `./selfhost.sh status` and `./selfhost.sh logs`. If port 8080 is busy, set `ACTIVEPIECES_PORT=8081` before starting.
+
+When Shelclaw runs on the host, use `http://localhost:8080/mcp` as the MCP URL. When Shelclaw runs inside Docker, use `http://activepieces-app:80/mcp`. Enable the MCP server in Activepieces under **Settings → MCP Server** first.
+
 ## Deployment
 
 ### Docker (recommended)

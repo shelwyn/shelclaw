@@ -8,6 +8,7 @@
 # Usage:
 #   ./selfhost.sh            # create config (first run) and start everything
 #   ./selfhost.sh up
+#   ./selfhost.sh activepieces  # start only Activepieces for local development
 #   ./selfhost.sh down
 #   ./selfhost.sh logs
 #   ./selfhost.sh status
@@ -129,9 +130,27 @@ start() {
   $COMPOSE ps
 }
 
+start_activepieces() {
+  need_docker
+  ensure_config
+  say "Starting Activepieces only (development mode)..."
+  $COMPOSE up -d activepieces-postgres activepieces-redis activepieces-app activepieces-worker
+  ap_port="$(grep '^ACTIVEPIECES_PORT=' "$AP_ENV" | cut -d= -f2)"
+  say ""
+  say "Activepieces  http://localhost:${ap_port:-8080}"
+  say "Create the first account there; it becomes the platform administrator."
+  wait_http "http://localhost:${ap_port:-8080}/api/v1/health" "Activepieces" || true
+  say ""
+  say "Services:"
+  $COMPOSE ps
+}
+
 case "${1:-up}" in
   up|start)
     start
+    ;;
+  activepieces|ap)
+    start_activepieces
     ;;
   down|stop)
     need_docker
@@ -170,7 +189,7 @@ case "${1:-up}" in
     say "Containers and data volumes removed."
     ;;
   help|-h|--help)
-    sed -n '2,18p' "$0"
+    sed -n '2,19p' "$0"
     ;;
   *)
     die "Unknown command: $1 (try ./selfhost.sh help)"

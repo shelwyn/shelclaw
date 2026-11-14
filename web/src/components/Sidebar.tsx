@@ -710,6 +710,7 @@ export function Sidebar() {
           onClick={createAgent}
           className="inline-flex h-5 w-5 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
           aria-label="New agent"
+          title="New agent"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
@@ -754,6 +755,7 @@ export function Sidebar() {
           onClick={createChat}
           className="inline-flex h-5 w-5 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
           aria-label="New chat"
+          title="New chat"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
@@ -931,6 +933,7 @@ export function Sidebar() {
             onClick={() => setSidebarOpen(false)}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink md:hidden"
             aria-label="Close sidebar"
+            title="Close sidebar"
           >
             <X className="h-4 w-4" />
           </button>
@@ -958,6 +961,7 @@ export function Sidebar() {
                 onClick={() => setSearch('')}
                 className="absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
                 aria-label="Clear search"
+                title="Clear search"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -975,6 +979,7 @@ export function Sidebar() {
               onClick={() => openModal({ type: 'project' })}
               className="inline-flex h-5 w-5 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
               aria-label="New project"
+              title="New project"
             >
               <Plus className="h-3.5 w-3.5" />
             </button>

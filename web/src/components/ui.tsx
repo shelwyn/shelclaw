@@ -163,6 +163,7 @@ export function Toggle({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      title={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
@@ -326,6 +327,7 @@ export function Modal({
               onClick={onClose}
               className="-mr-1 -mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-panel2 hover:text-ink"
               aria-label="Close"
+          title="Close"
             >
               <X className="h-4 w-4" />
             </button>

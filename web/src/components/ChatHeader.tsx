@@ -306,6 +306,7 @@ export function ChatHeader() {
         onClick={() => setSidebarOpen(true)}
         className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-panel2 hover:text-ink md:hidden"
         aria-label="Open sidebar"
+        title="Open sidebar"
       >
         <Menu className="h-4 w-4" />
       </button>
@@ -418,6 +419,7 @@ export function ChatHeader() {
               type="button"
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-panel2 hover:text-ink"
               aria-label="Chat actions"
+              title="Chat actions"
             >
               <MoreHorizontal className="h-4 w-4" />
             </button>

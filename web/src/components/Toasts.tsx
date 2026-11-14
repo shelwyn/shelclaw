@@ -41,6 +41,7 @@ export function Toasts() {
               onClick={() => dismiss(toast.id)}
               className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
               aria-label="Dismiss"
+              title="Dismiss"
             >
               <X className="h-3 w-3" />
             </button>

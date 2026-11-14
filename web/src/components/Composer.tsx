@@ -182,6 +182,7 @@ export function Composer() {
                     onClick={() => void removePending(file)}
                     className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-faint hover:bg-panel hover:text-danger"
                     aria-label={`Remove ${file.name}`}
+                    title={`Remove ${file.name}`}
                   >
                     <X className="h-2.5 w-2.5" />
                   </button>

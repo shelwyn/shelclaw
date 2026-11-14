@@ -455,6 +455,7 @@ export function PreviewDrawer() {
             onClick={closePreview}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink"
             aria-label="Close preview"
+            title="Close preview"
           >
             <X className="h-4 w-4" />
           </button>

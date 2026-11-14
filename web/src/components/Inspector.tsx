@@ -79,6 +79,7 @@ function TaskNode({
             onClick={() => toggleExpanded(task.id)}
             className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-faint hover:bg-panel hover:text-ink"
             aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
+            title={isExpanded ? 'Collapse details' : 'Expand details'}
           >
             {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           </button>
@@ -279,6 +280,7 @@ export function Inspector() {
             onClick={toggleInspector}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink"
             aria-label="Close inspector"
+            title="Close inspector"
           >
             <X className="h-4 w-4" />
           </button>

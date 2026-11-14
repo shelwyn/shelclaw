@@ -355,6 +355,7 @@ function MemoryCanvas({
                 onClick={() => openModal({ type: 'agent', id: agent.id })}
                 className="inline-flex h-4 w-4 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
                 aria-label={`Edit ${agent.name}`}
+                title={`Edit ${agent.name}`}
               >
                 <Settings className="h-2.5 w-2.5" />
               </button>
@@ -407,6 +408,7 @@ function MemoryDetailModal({
             onClick={onClose}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-panel2 hover:text-ink"
             aria-label="Close memory"
+            title="Close memory"
           >
             <X className="h-4 w-4" />
           </button>

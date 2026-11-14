@@ -172,6 +172,7 @@ function CopyCommand({ command }: { command: string }) {
         }}
         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint hover:bg-panel2 hover:text-ink"
         aria-label="Copy command"
+        title="Copy command"
       >
         {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
       </button>
@@ -1528,12 +1529,13 @@ function McpSettings() {
                 </div>
                 <Button
                   variant="secondary"
-                  size="sm"
+                  size="icon"
                   onClick={() => void discoverEditingTools()}
                   disabled={!editing.id || Boolean(testing)}
                   loading={Boolean(testing) && testing === editing.id}
+                  title="Discover tools"
                 >
-                  <RefreshCw className="h-3 w-3" /> Discover tools
+                  <RefreshCw className={cn('h-3.5 w-3.5', testing === editing.id && 'hidden')} />
                 </Button>
               </div>
 

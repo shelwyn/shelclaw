@@ -44,8 +44,7 @@ rand_hex() {
   fi
 }
 
-resolve_ap_version() {
-  fallback="0.88.3"
+resolve_ap_version() {  fallback="0.88.3"
   version=""
   if command -v curl >/dev/null 2>&1; then
     version="$(curl -L -s -o /dev/null -w '%{url_effective}' https://github.com/activepieces/activepieces/releases/latest 2>/dev/null | sed 's#.*/##')"
@@ -56,8 +55,25 @@ resolve_ap_version() {
   esac
 }
 
+ensure_ca_bundle() {
+  target="$CONFIG_DIR/ca.pem"
+  if [ -s "$target" ]; then
+    return
+  fi
+  for candidate in "${CA_CERT_FILE:-}" "${SSL_CERT_FILE:-}" /etc/ssl/cert.pem /etc/ssl/certs/ca-certificates.crt; do
+    if [ -n "$candidate" ] && [ -f "$candidate" ] && [ -s "$candidate" ]; then
+      cp "$candidate" "$target"
+      say "Using CA bundle: $candidate"
+      return
+    fi
+  done
+  : >"$target"
+  say "Warning: no CA bundle found. Piece sync may fail behind a TLS-inspecting proxy."
+}
+
 ensure_config() {
   mkdir -p "$CONFIG_DIR"
+  ensure_ca_bundle
   if [ ! -f "$APP_ENV" ]; then
     cat >"$APP_ENV" <<EOF
 HOST=0.0.0.0

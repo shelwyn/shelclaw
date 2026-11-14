@@ -54,3 +54,6 @@ npm-debug.log*
 /*.eml
 /*.sql
 /*.tgz
+
+# Local agent/tool configuration
+/opencode.json

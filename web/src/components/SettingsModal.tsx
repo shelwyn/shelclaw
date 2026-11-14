@@ -2054,6 +2054,18 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
             <code className="font-mono">./selfhost.sh logs</code>. If the port is busy, set{' '}
             <code className="font-mono">ACTIVEPIECES_PORT=8081</code> before starting.
           </div>
+
+          <div className="rounded-lg border border-line bg-panel2/40 px-3 py-2 text-[10.5px]">
+            <strong className="text-ink">Pieces list is empty or says “No pieces found”?</strong>{' '}
+            Self-hosted Activepieces syncs the official piece catalog from{' '}
+            <code className="font-mono">cloud.activepieces.com</code>. Behind a TLS-inspecting proxy,
+            set <code className="font-mono">CA_CERT_FILE</code> or{' '}
+            <code className="font-mono">SSL_CERT_FILE</code> to your CA bundle and re-run{' '}
+            <code className="font-mono">./selfhost.sh activepieces</code>. The script mounts that
+            bundle into the containers. Wait for the sync, then refresh. “Global Connections” is an
+            enterprise feature; use the project-level <strong className="text-ink">Connections</strong>{' '}
+            page instead.
+          </div>
         </div>
       </Modal>
     </div>

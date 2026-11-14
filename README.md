@@ -434,6 +434,10 @@ For the full app + Activepieces stack, use `./selfhost.sh`. Check status/logs wi
 
 When Shelclaw runs on the host, use `http://localhost:8080/mcp` as the MCP URL. When Shelclaw runs inside Docker, use `http://activepieces-app:80/mcp`. Enable the MCP server in Activepieces under **Settings → MCP Server** first.
 
+If **Connections → All** is empty or **New Connection** says **No pieces found**, Activepieces could not sync its piece catalog. Self-hosted Activepieces fetches pieces over HTTPS from `cloud.activepieces.com`; behind a TLS-inspecting proxy the container needs your CA bundle. The self-host script copies `SSL_CERT_FILE` (or `CA_CERT_FILE`) into `.selfhost/ca.pem` and mounts it into the containers with `NODE_EXTRA_CA_CERTS`. Re-run `./selfhost.sh activepieces` after setting one of those variables, wait for the sync, then refresh.
+
+**Global Connections** is an enterprise/Teams feature and can be ignored. Use the project-level **Connections** page for normal app connections.
+
 ## Deployment
 
 ### Docker (recommended)

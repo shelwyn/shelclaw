@@ -469,7 +469,7 @@ docker run --rm -v shelclaw-data:/data -v "$PWD":/backup alpine \
 docker compose restart
 ```
 
-If your Docker build runs behind a TLS-inspecting proxy and npm cannot verify certificates, copy your npm config into the project as a temporary build secret. The default secret file is `.npmrc.docker`:
+If your Docker build runs behind a TLS-inspecting proxy and npm cannot verify certificates, `./selfhost.sh` automatically copies your host CA bundle (from `CA_CERT_FILE` or `SSL_CERT_FILE`) into `.selfhost/ca.pem` and passes it to both the build and the running containers. You can also provide an npm config explicitly as a temporary build secret. The default secret file is `.npmrc.docker`:
 
 ```bash
 cp ~/.npmrc .npmrc.local
@@ -477,11 +477,14 @@ NPMRC_PATH=.npmrc.local docker compose up -d --build
 rm .npmrc.local        # after the build; it is gitignored
 ```
 
-Or build directly:
+Or build directly with both optional secrets:
 
 ```bash
 cp ~/.npmrc .npmrc.local
-docker build --secret id=npmrc,src=.npmrc.local -t shelclaw .
+docker build \
+  --secret id=npmrc,src=.npmrc.local \
+  --secret id=ca_cert,src="$SSL_CERT_FILE" \
+  -t shelclaw .
 rm .npmrc.local
 ```
 

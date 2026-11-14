@@ -6,6 +6,7 @@ services:
       context: .
       secrets:
         - npmrc
+        - ca_cert
     ports:
       - '${SHELCLAW_PORT:-8787}:8787'
     env_file:
@@ -80,3 +81,5 @@ volumes:
 secrets:
   npmrc:
     file: ${NPMRC_PATH:-.npmrc.docker}
+  ca_cert:
+    file: .selfhost/ca.pem

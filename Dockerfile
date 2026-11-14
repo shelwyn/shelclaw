@@ -7,8 +7,15 @@ COPY server/package.json ./server/package.json
 COPY web/package.json ./web/package.json
 # Optional: pass an npmrc with a corporate CA or registry mirror via
 #   docker build --secret id=npmrc,src=$HOME/.npmrc .
+# Optional: pass a CA bundle via --secret id=ca_cert,src=/path/to/ca-bundle.pem
 RUN --mount=type=secret,id=npmrc,required=false \
+    --mount=type=secret,id=ca_cert,required=false \
     if [ -f /run/secrets/npmrc ]; then cp /run/secrets/npmrc /root/.npmrc; fi && \
+    if [ -f /run/secrets/ca_cert ]; then \
+      export NODE_EXTRA_CA_CERTS=/run/secrets/ca_cert; \
+      export SSL_CERT_FILE=/run/secrets/ca_cert; \
+      export npm_config_cafile=/run/secrets/ca_cert; \
+    fi && \
     npm ci --no-audit --no-fund
 COPY . .
 RUN npm run build && npm prune --omit=dev

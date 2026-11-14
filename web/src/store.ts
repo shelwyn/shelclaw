@@ -94,6 +94,8 @@ interface AppState {
   previewTarget: PreviewTarget | null
   unreadChatIds: string[]
   artifactsChangedAt: number
+  activityByChat: Record<string, string>
+  scrollRequest: number
   sidebarOpen: boolean
   sidebarCollapsed: boolean
   theme: 'light' | 'dark'
@@ -117,6 +119,7 @@ interface AppState {
   reorderProjects: (ids: string[]) => Promise<void>
   toggleProjectPin: (id: string) => Promise<void>
   send: (content: string, fileIds?: string[]) => Promise<boolean>
+  requestScrollToBottom: () => void
   removeQueuedMessage: (id: string) => Promise<void>
   stop: () => Promise<void>
   updateChat: (patch: Partial<Chat>) => Promise<void>
@@ -381,6 +384,19 @@ function handleEvent(event: BusEvent): void {
       useAppStore.setState((current) => ({ artifactsChangedAt: current.artifactsChangedAt + 1 }))
       break
 
+    case 'activity.changed': {
+      const chatId = String(event.chatId || '')
+      const label = String(event.label || '')
+      if (!chatId) break
+      useAppStore.setState((current) => {
+        const next = { ...current.activityByChat }
+        if (label) next[chatId] = label
+        else delete next[chatId]
+        return { activityByChat: next }
+      })
+      break
+    }
+
     case 'settings.changed':
       void state.refresh()
       break
@@ -427,6 +443,14 @@ function handleEvent(event: BusEvent): void {
             : current.detail,
       }))
       if (run.status !== 'running') useAppStore.getState().markUnread(run.chatId)
+      if (run.status !== 'running') {
+        useAppStore.setState((current) => {
+          if (!current.activityByChat[run.chatId]) return current
+          const next = { ...current.activityByChat }
+          delete next[run.chatId]
+          return { activityByChat: next }
+        })
+      }
       if (run.status !== 'running' && state.activeChatId === run.chatId) {
         setTimeout(() => {
           if (useAppStore.getState().activeChatId === run.chatId) {
@@ -553,6 +577,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   previewTarget: null,
   unreadChatIds: typeof window !== 'undefined' ? loadUnreadChats() : [],
   artifactsChangedAt: 0,
+  activityByChat: {},
+  scrollRequest: 0,
   sidebarOpen: false,
   sidebarCollapsed: typeof window !== 'undefined' ? loadSidebarCollapsed() : false,
   theme: initialTheme(),
@@ -814,10 +840,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         model: chat.model,
         fileIds: fileIds?.length ? fileIds : undefined,
       })
-      set((current) => ({ drafts: { ...current.drafts, [chatId]: '' } }))
+      set((current) => ({
+        drafts: { ...current.drafts, [chatId]: '' },
+        scrollRequest: current.scrollRequest + 1,
+      }))
       if (result.queued) {
         pushToast('info', 'Message queued. It will send when this run finishes.')
-        void get().refreshDetail(chatId)
+        void get()
+          .refreshDetail(chatId)
+          .then(() => get().requestScrollToBottom())
       }
       return true
     } catch (err) {
@@ -828,6 +859,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ sending: false })
     }
   },
+
+  requestScrollToBottom: () =>
+    set((state) => ({ scrollRequest: state.scrollRequest + 1 })),
 
   removeQueuedMessage: async (id: string) => {
     set((state) =>

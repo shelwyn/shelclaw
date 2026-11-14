@@ -39,6 +39,17 @@ export function Composer() {
   const agent = agents.find((entry) => entry.id === chat?.agentId)
   const canSend = Boolean((draft.trim() || pending.length) && !sending && !uploading)
   const queued = useAppStore((state) => state.detail?.queue?.length || 0)
+  const activityByChat = useAppStore((state) => state.activityByChat)
+  const tasks = useAppStore((state) => state.detail?.tasks) || []
+  const activeTask = tasks.find((task) => task.status === 'running' || task.status === 'queued')
+  const taskAgent = activeTask ? agents.find((entry) => entry.id === activeTask.agentId)?.name : ''
+  const activity = activityByChat[chatId] || ''
+  const genericActivity = !activity || ['Thinking…', 'Writing…', 'Synthesizing…'].includes(activity)
+  const workLabel = !genericActivity
+    ? `${activity}${activeTask ? ` · ${activeTask.title}` : ''}`
+    : activeTask
+      ? `${taskAgent || 'Agent'} · ${activeTask.title}`
+      : activity || 'Working…'
 
   useEffect(() => {
     const element = ref.current
@@ -121,6 +132,17 @@ export function Composer() {
   return (
     <div className="shrink-0 bg-gradient-to-t from-bg via-bg to-transparent px-4 pb-4 pt-2 sm:px-6 sm:pb-5">
       <div className="mx-auto w-full max-w-3xl">
+        {running ? (
+          <div className="mb-2 flex items-center gap-2 px-1 text-[11px] text-muted">
+            <Spinner className="h-3 w-3 shrink-0 text-ink" />
+            <span className="min-w-0 flex-1 truncate animate-pulse">{workLabel}</span>
+            {queued ? (
+              <span className="shrink-0 rounded-full border border-line px-1.5 py-px text-[9.5px] text-faint">
+                {queued} queued
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <div
           onDragOver={(event) => {
             if (event.dataTransfer.types.includes('Files')) {
@@ -275,14 +297,13 @@ export function Composer() {
         <div className="mt-1.5 flex items-center justify-between px-1">
           <span className="text-[10px] text-faint">
             {running ? (
-              <span className="inline-flex items-center gap-1.5 text-accent">
-                <span className="h-1.5 w-1.5 rounded-full bg-accent pulse-soft" />
+              <span>
                 {queued
                   ? `${queued} queued — sends when this run finishes`
-                  : 'Orchestration live — type to queue your next message'}
+                  : 'Enter queues your next message'}
               </span>
             ) : dragOver ? (
-              <span className="text-accent">Drop files to attach them to this message</span>
+              <span className="text-ink">Drop files to attach them to this message</span>
             ) : (
               <span>Attach files or drop them here — agents can read the text inside.</span>
             )}

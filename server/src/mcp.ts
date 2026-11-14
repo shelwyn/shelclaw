@@ -201,9 +201,10 @@ async function withHttpServer<T>(
 
   const post = async (payload: unknown): Promise<Response> => {
     const headers: Record<string, string> = {
+      ...server.env,
+      ...server.headers,
       'content-type': 'application/json',
       accept: 'application/json, text/event-stream',
-      ...server.headers,
     }
     if (sessionId) headers['mcp-session-id'] = sessionId
     const res = await fetch(server.url, {
@@ -297,6 +298,7 @@ export async function mcpToolSummaries(
   return tools.map((tool) => ({
     serverId: server.id,
     serverName: server.name,
+    serverDescription: server.description,
     name: tool.name,
     description: tool.description || '',
     inputSchema: tool.inputSchema,

@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronsUpDown,
   Cpu,
-  FolderKanban,
   FolderOpen,
   Link2,
   Menu,
@@ -26,7 +25,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store'
 import type { Agent, Chat, Provider } from '../types'
 import { modelShort, isHarnessKind, fmtTokens, fmtCost } from '../lib/format'
-import { Avatar, Badge, Button, cn, ConfirmDialog, MenuItem, Popover, Spinner } from './ui'
+import { Avatar, Badge, Button, cn, ConfirmDialog, MenuItem, Popover } from './ui'
 
 function AgentPicker({ chat, agent }: { chat: Chat; agent?: Agent }) {
   const agents = useAppStore((state) => state.agents).filter(
@@ -242,7 +241,6 @@ function ModelPicker({ chat }: { chat: Chat }) {
 export function ChatHeader() {
   const agents = useAppStore((state) => state.agents)
   const chats = useAppStore((state) => state.chats)
-  const projects = useAppStore((state) => state.projects)
   const activeRuns = useAppStore((state) => state.activeRuns)
   const setSidebarOpen = useAppStore((state) => state.setSidebarOpen)
   const toggleInspector = useAppStore((state) => state.toggleInspector)
@@ -272,7 +270,6 @@ export function ChatHeader() {
   const [deleting, setDeleting] = useState(false)
 
   const agent = agents.find((entry) => entry.id === chat?.agentId)
-  const project = projects.find((entry) => entry.id === chat?.projectId)
   const parent = chats.find((entry) => entry.id === chat?.parentChatId)
   const orchestratorChat = chats
     .filter(
@@ -317,11 +314,11 @@ export function ChatHeader() {
         <button
           type="button"
           onClick={() => void openChat(chat.parentChatId)}
-          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-1.5 text-[11.5px] text-muted hover:bg-panel2 hover:text-ink"
-          title="Back to parent chat"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-panel2 hover:text-ink"
+          title={`Back to ${parent?.title || 'parent chat'}`}
+          aria-label="Back to parent chat"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          <span className="hidden max-w-[110px] truncate sm:inline">{parent?.title || 'Parent'}</span>
+          <ArrowLeft className="h-4 w-4" />
         </button>
       ) : null}
 
@@ -329,11 +326,11 @@ export function ChatHeader() {
         <button
           type="button"
           onClick={() => void openChat(orchestratorChat.id)}
-          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-1.5 text-[11.5px] text-muted hover:bg-panel2 hover:text-ink"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-panel2 hover:text-ink"
           title="Open the Orchestrator chat"
+          aria-label="Open the Orchestrator chat"
         >
-          <Link2 className="h-3.5 w-3.5" />
-          <span className="hidden max-w-[110px] truncate sm:inline">Orchestrator</span>
+          <Link2 className="h-4 w-4" />
         </button>
       ) : null}
 
@@ -368,30 +365,6 @@ export function ChatHeader() {
             <Pencil className="h-3 w-3 shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100" />
           </button>
         )}
-        <div className="flex items-center gap-1.5 text-[10px] text-faint">
-          {chat.kind === 'agent' ? <Badge tone="accent">sub-agent</Badge> : null}
-          {project ? (
-            <span className="inline-flex items-center gap-1">
-              <FolderKanban className="h-2.5 w-2.5" />
-              {project.name}
-            </span>
-          ) : null}
-          {agent ? (
-            <span className="inline-flex items-center gap-1">
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: 'var(--ink)' }}
-              />
-              {agent.name}
-            </span>
-          ) : null}
-          {running ? (
-            <span className="inline-flex items-center gap-1 text-accent">
-              <Spinner className="h-2.5 w-2.5" />
-              working
-            </span>
-          ) : null}
-        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
@@ -405,21 +378,6 @@ export function ChatHeader() {
             <Square className="h-3 w-3 fill-current" />
             Stop
           </Button>
-        ) : null}
-
-        {usage && context ? (
-          <div
-            className="hidden items-center gap-1.5 rounded-lg border border-line bg-panel px-2 py-1 text-[10px] tabular-nums text-muted lg:flex"
-            title={`${context.usedTokens.toLocaleString()} of ${context.limitTokens.toLocaleString()} context tokens used`}
-          >
-            <span>{fmtTokens(usage.total)} tok</span>
-            <span className="text-faint">·</span>
-            <span className={context.percent >= 80 ? 'font-medium text-warn' : ''}>
-              {context.percent}% ctx
-            </span>
-            <span className="text-faint">·</span>
-            <span>{fmtCost(usage.cost)}</span>
-          </div>
         ) : null}
 
         <button
@@ -467,6 +425,24 @@ export function ChatHeader() {
         >
           {(close) => (
             <div>
+              {usage && context ? (
+                <div className="mb-1 rounded-md border border-line bg-panel2/50 px-2 py-1.5 text-[10px] tabular-nums text-muted">
+                  <div className="flex items-center justify-between gap-3">
+                    <span>Tokens</span>
+                    <span className="text-ink">{fmtTokens(usage.total)}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between gap-3">
+                    <span>Context</span>
+                    <span className={context.percent >= 80 ? 'font-medium text-warn' : 'text-ink'}>
+                      {context.percent}%
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between gap-3">
+                    <span>Cost</span>
+                    <span className="text-ink">{fmtCost(usage.cost)}</span>
+                  </div>
+                </div>
+              ) : null}
               <MenuItem
                 icon={<Pencil className="h-3.5 w-3.5" />}
                 onClick={() => {

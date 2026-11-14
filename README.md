@@ -192,6 +192,10 @@ Add MCP servers in **Settings → MCP Servers**. Both transports are supported:
 
 Use **Test connection** to initialize the server and list its tools. Enabled servers expose their tools to agents as `mcp_call`; the model sees only server names, tool names, descriptions and input schemas.
 
+Each MCP server also has an **Instructions for agents** field. That text is injected into the Orchestrator and every agent run, telling them when the server should be used and which tools to prefer. Keep credentials out of this field.
+
+For HTTP servers, credential headers can be entered as HTTP headers. Environment entries are also sent as HTTP headers for compatibility; for stdio servers they become environment variables.
+
 ### Credential security
 
 - Credentials are encrypted at rest with **AES-256-GCM** before they touch SQLite.

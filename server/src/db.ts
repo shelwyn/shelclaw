@@ -184,6 +184,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
 CREATE TABLE IF NOT EXISTS mcp_servers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
   transport TEXT NOT NULL DEFAULT 'stdio',
   command TEXT NOT NULL DEFAULT '',
   args TEXT NOT NULL DEFAULT '[]',
@@ -247,6 +248,9 @@ if (!hasColumn('projects', 'pinned')) {
 }
 if (!hasColumn('projects', 'sort_order')) {
   db.exec('ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0')
+}
+if (!hasColumn('mcp_servers', 'description')) {
+  db.exec("ALTER TABLE mcp_servers ADD COLUMN description TEXT NOT NULL DEFAULT ''")
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_chats_archived ON chats(archived_at)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id, created_at)')

@@ -380,6 +380,7 @@ function mapMcpServer(row: Row): McpServer {
   return {
     id: s(row.id),
     name: s(row.name),
+    description: s(row.description),
     transport: s(row.transport) === 'http' ? 'http' : 'stdio',
     command: s(row.command),
     args: parseJson<string[]>(row.args, []),
@@ -495,6 +496,7 @@ function saveMcpSecrets(
 
 export function createMcpServer(input: {
   name: string
+  description?: string
   transport: 'stdio' | 'http'
   command?: string
   args?: string[]
@@ -506,11 +508,12 @@ export function createMcpServer(input: {
   const serverId = id('mcp')
   const t = now()
   db.prepare(
-    `INSERT INTO mcp_servers (id, name, transport, command, args, url, enabled, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO mcp_servers (id, name, description, transport, command, args, url, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     serverId,
     input.name.trim(),
+    input.description || '',
     input.transport,
     input.command || '',
     JSON.stringify(input.args || []),
@@ -527,6 +530,7 @@ export function updateMcpServer(
   serverId: string,
   input: {
     name?: string
+    description?: string
     transport?: 'stdio' | 'http'
     command?: string
     args?: string[]
@@ -540,9 +544,10 @@ export function updateMcpServer(
   const existing = getMcpServer(serverId)
   if (!existing) return undefined
   db.prepare(
-    `UPDATE mcp_servers SET name=?, transport=?, command=?, args=?, url=?, enabled=?, updated_at=? WHERE id=?`,
+    `UPDATE mcp_servers SET name=?, description=?, transport=?, command=?, args=?, url=?, enabled=?, updated_at=? WHERE id=?`,
   ).run(
     (input.name ?? existing.name).trim(),
+    input.description ?? existing.description,
     input.transport ?? existing.transport,
     input.command ?? existing.command,
     JSON.stringify(input.args ?? existing.args),

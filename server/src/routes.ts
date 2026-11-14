@@ -91,6 +91,7 @@ const mcpCredentialMap = z
 
 const mcpInput = z.object({
   name: z.string().min(1).max(80),
+  description: z.string().max(8000).optional(),
   transport: z.enum(['stdio', 'http']),
   command: z.string().max(1000).optional(),
   args: z.array(z.string().max(1000)).max(100).optional(),

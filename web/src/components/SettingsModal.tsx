@@ -1023,6 +1023,7 @@ function WorkspaceSettings() {
 interface McpFormState {
   id: string
   name: string
+  description: string
   transport: 'stdio' | 'http'
   command: string
   argsText: string
@@ -1036,6 +1037,7 @@ interface McpFormState {
 const emptyMcpForm = (): McpFormState => ({
   id: '',
   name: '',
+  description: '',
   transport: 'stdio',
   command: '',
   argsText: '',
@@ -1050,6 +1052,7 @@ function formFromMcp(server: McpServer): McpFormState {
   return {
     id: server.id,
     name: server.name,
+    description: server.description,
     transport: server.transport,
     command: server.command,
     argsText: server.args.join('\n'),
@@ -1124,6 +1127,7 @@ function McpSettings() {
       if (editing.id) {
         await api.updateMcpServer(editing.id, {
           name: editing.name,
+          description: editing.description,
           transport: editing.transport,
           command: editing.command,
           args,
@@ -1137,6 +1141,7 @@ function McpSettings() {
       } else {
         await api.createMcpServer({
           name: editing.name,
+          description: editing.description,
           transport: editing.transport,
           command: editing.command,
           args,
@@ -1254,6 +1259,11 @@ function McpSettings() {
                       ? [server.command, ...server.args].filter(Boolean).join(' ')
                       : server.url}
                   </div>
+                  {server.description ? (
+                    <div className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-muted">
+                      {server.description}
+                    </div>
+                  ) : null}
                   {server.envKeys.length || server.headerKeys.length ? (
                     <div className="mt-1 truncate text-[9.5px] text-faint">
                       Keys: {[...server.envKeys, ...server.headerKeys].join(', ')}
@@ -1366,6 +1376,23 @@ function McpSettings() {
               </Field>
             </div>
 
+            <Field
+              label="Instructions for agents"
+              hint="Injected into the Orchestrator and every agent so they know when and how to use this server. Do not put credentials here."
+            >
+              <Textarea
+                value={editing.description}
+                onChange={(event) =>
+                  setEditing((current) =>
+                    current ? { ...current, description: event.target.value } : current,
+                  )
+                }
+                rows={3}
+                placeholder="Use this server to send transactional emails, list drafts, and check delivery status. Prefer these tools over terminal workarounds."
+                className="text-[12px]"
+              />
+            </Field>
+
             {editing.transport === 'stdio' ? (
               <>
                 <Field label="Command" hint="Executable on the server host.">
@@ -1409,47 +1436,49 @@ function McpSettings() {
               </Field>
             )}
 
-            <Field
-              label="Environment variables"
-              hint={
-                editing.id
-                  ? 'Leave blank to keep the stored values. One KEY=value per line.'
-                  : 'One KEY=value per line. Stored encrypted.'
-              }
-            >
-              <Textarea
-                value={editing.envText}
-                onChange={(event) =>
-                  setEditing((current) =>
-                    current ? { ...current, envText: event.target.value } : current,
-                  )
+            {editing.transport === 'stdio' ? (
+              <Field
+                label="Environment variables"
+                hint={
+                  editing.id
+                    ? 'Leave blank to keep the stored values. One KEY=value per line. Stored encrypted.'
+                    : 'One KEY=value per line. Stored encrypted.'
                 }
-                rows={3}
-                placeholder="API_KEY=your-key"
-                className="font-mono text-[11.5px]"
-              />
-            </Field>
-
-            <Field
-              label="HTTP headers"
-              hint={
-                editing.id
-                  ? 'Leave blank to keep the stored values. One Header: value per line.'
-                  : 'One Header: value per line. Stored encrypted.'
-              }
-            >
-              <Textarea
-                value={editing.headersText}
-                onChange={(event) =>
-                  setEditing((current) =>
-                    current ? { ...current, headersText: event.target.value } : current,
-                  )
+              >
+                <Textarea
+                  value={editing.envText}
+                  onChange={(event) =>
+                    setEditing((current) =>
+                      current ? { ...current, envText: event.target.value } : current,
+                    )
+                  }
+                  rows={3}
+                  placeholder="API_KEY=your-key"
+                  className="font-mono text-[11.5px]"
+                />
+              </Field>
+            ) : (
+              <Field
+                label="HTTP headers"
+                hint={
+                  editing.id
+                    ? 'Leave blank to keep the stored values. One Header: value per line. Stored encrypted.'
+                    : 'One Header: value per line. Stored encrypted. Use this for API keys and auth tokens.'
                 }
-                rows={3}
-                placeholder="Authorization: Bearer your-token"
-                className="font-mono text-[11.5px]"
-              />
-            </Field>
+              >
+                <Textarea
+                  value={editing.headersText}
+                  onChange={(event) =>
+                    setEditing((current) =>
+                      current ? { ...current, headersText: event.target.value } : current,
+                    )
+                  }
+                  rows={3}
+                  placeholder="x-api-key: your-key"
+                  className="font-mono text-[11.5px]"
+                />
+              </Field>
+            )}
 
             {editing.id ? (
               <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted">

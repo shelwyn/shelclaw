@@ -360,6 +360,7 @@ export function MessageList() {
   const setDraft = useAppStore((state) => state.setDraft)
   const activeRuns = useAppStore((state) => state.activeRuns)
   const openModal = useAppStore((state) => state.openModal)
+  const scrollRequest = useAppStore((state) => state.scrollRequest)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
@@ -386,6 +387,16 @@ export function MessageList() {
     const element = scrollRef.current
     if (element) element.scrollTop = element.scrollHeight
   }, [chat?.id])
+
+  useEffect(() => {
+    if (!scrollRequest) return
+    setAtBottom(true)
+    const element = scrollRef.current
+    if (!element) return
+    requestAnimationFrame(() => {
+      element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
+    })
+  }, [scrollRequest])
 
   const onScroll = () => {
     const element = scrollRef.current

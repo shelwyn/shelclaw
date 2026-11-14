@@ -40,18 +40,31 @@ export const mcpCallArgsSchema = z.object({
 export type McpCallArgs = z.infer<typeof mcpCallArgsSchema>
 
 export function buildMcpCallTool(tools: McpToolSummary[]): ToolDefinition {
-  const catalog = tools
-    .slice(0, 120)
-    .map(
-      (tool) =>
-        `- server "${tool.serverName}", tool "${tool.name}"${tool.description ? `: ${tool.description}` : ''}`,
-    )
+  const servers = new Map<string, { description: string; tools: McpToolSummary[] }>()
+  for (const tool of tools) {
+    const entry = servers.get(tool.serverName) || {
+      description: tool.serverDescription || '',
+      tools: [],
+    }
+    entry.tools.push(tool)
+    if (!entry.description && tool.serverDescription) entry.description = tool.serverDescription
+    servers.set(tool.serverName, entry)
+  }
+  const catalog = [...servers.entries()]
+    .map(([name, entry]) => {
+      const lines = entry.tools
+        .slice(0, 40)
+        .map((tool) => `  - tool "${tool.name}"${tool.description ? `: ${tool.description}` : ''}`)
+        .join('\n')
+      const id = entry.tools[0]?.serverId || ''
+      return `- server "${name}" (id: ${id})${entry.description ? ` — ${entry.description}` : ''}\n${lines}`
+    })
     .join('\n')
   return {
     name: MCP_CALL_TOOL,
-    description: `Call a tool exposed by a connected MCP server. Credentials are handled server-side and are never included in this conversation.
+    description: `Call a tool exposed by a connected MCP server. Prefer these tools whenever the user request matches their purpose instead of workarounds. Credentials are handled server-side and are never included in this conversation.
 
-Available MCP tools:
+Connected MCP servers and tools:
 ${catalog || '(none)'}`,
     parameters: {
       type: 'object',

@@ -216,6 +216,7 @@ export type McpTransport = 'stdio' | 'http'
 export interface McpServer {
   id: string
   name: string
+  description: string
   transport: McpTransport
   command: string
   args: string[]
@@ -242,6 +243,7 @@ export interface McpServerInternal extends McpServer {
 export interface McpToolSummary {
   serverId: string
   serverName: string
+  serverDescription: string
   name: string
   description: string
   inputSchema: unknown

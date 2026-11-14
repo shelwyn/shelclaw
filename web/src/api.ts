@@ -55,7 +55,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   } catch (err) {
     const detail = err instanceof Error && err.message ? ` (${err.message})` : ''
     throw new ApiError(
-      `Cannot reach the OpenCodex API${detail}. Check that the app server is running, then refresh this page.`,
+      `Cannot reach the Shelclaw API${detail}. Check that the app server is running, then refresh this page.`,
       0,
     )
   }

@@ -917,7 +917,7 @@ export function Sidebar() {
       >
         <div className="flex items-center gap-2 px-3 pb-2 pt-3.5">
           <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.02em] text-ink">
-            {settings.workspaceName || 'OpenCodex'}
+            {settings.workspaceName || 'Shelclaw'}
           </span>
           <button
             type="button"

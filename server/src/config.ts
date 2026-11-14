@@ -13,12 +13,27 @@ const dataDir = process.env.DATA_DIR
 
 fs.mkdirSync(dataDir, { recursive: true })
 
+let dbPath = path.join(dataDir, 'shelclaw.db')
+const legacyDbPath = path.join(dataDir, 'opencodex.db')
+if (!fs.existsSync(dbPath) && fs.existsSync(legacyDbPath)) {
+  try {
+    fs.renameSync(legacyDbPath, dbPath)
+    for (const suffix of ['-wal', '-shm']) {
+      if (fs.existsSync(`${legacyDbPath}${suffix}`)) {
+        fs.renameSync(`${legacyDbPath}${suffix}`, `${dbPath}${suffix}`)
+      }
+    }
+  } catch {
+    dbPath = legacyDbPath
+  }
+}
+
 export const config = {
   port: Number(process.env.PORT || 8787),
   host: process.env.HOST || '127.0.0.1',
   appToken: (process.env.APP_TOKEN || '').trim(),
   dataDir,
-  dbPath: path.join(dataDir, 'opencodex.db'),
+  dbPath,
   webDist: path.join(projectRoot, 'web', 'dist'),
   projectRoot,
   isProd: process.env.NODE_ENV === 'production' || !process.env.TSX_DEV,

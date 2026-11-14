@@ -225,7 +225,7 @@ export function AgentModal({ agentId }: { agentId?: string }) {
             value={form.systemPrompt}
             onChange={(event) => update('systemPrompt', event.target.value)}
             rows={10}
-            placeholder={`You are a … agent in OpenCodex.\n\nYour job is to …\n\nRules:\n- …`}
+            placeholder={`You are a … agent in Shelclaw.\n\nYour job is to …\n\nRules:\n- …`}
             className="min-h-[180px] font-mono text-[11.5px] leading-relaxed"
             spellCheck={false}
           />

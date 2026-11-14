@@ -33,7 +33,7 @@ export function AuthScreen() {
 
       <div className="relative w-full max-w-[400px]">
         <div className="mb-6 flex items-center justify-center">
-          <div className="text-[17px] font-semibold tracking-[-0.02em] text-ink">OpenCodex</div>
+          <div className="text-[17px] font-semibold tracking-[-0.02em] text-ink">Shelclaw</div>
         </div>
 
         <div className="rounded-2xl border border-line bg-panel p-5 shadow-[0_24px_80px_-30px_rgba(0,0,0,0.35)]">

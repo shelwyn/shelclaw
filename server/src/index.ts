@@ -85,7 +85,7 @@ if (fs.existsSync(indexFile)) {
   })
 } else {
   app.get('/', async () => ({
-    name: 'OpenCodex API',
+    name: 'Shelclaw API',
     hint: 'The web app is not built. Run `npm run dev` for development or `npm run build` for production.',
     health: '/api/health',
   }))
@@ -110,7 +110,7 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'))
 try {
   await app.listen({ port: config.port, host: config.host })
   const host = config.host === '0.0.0.0' ? 'localhost' : config.host
-  console.log(`\n  OpenCodex  →  http://${host}:${config.port}`)
+  console.log(`\n  Shelclaw  →  http://${host}:${config.port}`)
   console.log(`  Data       →  ${config.dataDir}`)
   if (!config.appToken) console.log('  Auth       →  open (set APP_TOKEN to lock down remote access)')
   // Resume messages that were queued before the previous process stopped.

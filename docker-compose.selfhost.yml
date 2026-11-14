@@ -1,17 +1,17 @@
-name: opencodex-selfhost
+name: shelclaw-selfhost
 
 services:
-  opencodex:
+  shelclaw:
     build:
       context: .
       secrets:
         - npmrc
     ports:
-      - '${OPENCODEX_PORT:-8787}:8787'
+      - '${SHELCLAW_PORT:-8787}:8787'
     env_file:
-      - .selfhost/opencodex.env
+      - .selfhost/shelclaw.env
     volumes:
-      - opencodex-data:/data
+      - shelclaw-data:/data
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     restart: unless-stopped
@@ -61,14 +61,14 @@ services:
       - activepieces-redis-data:/data
 
 volumes:
-  opencodex-data:
-    name: opencodex-data
+  shelclaw-data:
+    name: shelclaw-data
   activepieces-postgres-data:
-    name: opencodex-activepieces-postgres
+    name: shelclaw-activepieces-postgres
   activepieces-redis-data:
-    name: opencodex-activepieces-redis
+    name: shelclaw-activepieces-redis
   activepieces-cache:
-    name: opencodex-activepieces-cache
+    name: shelclaw-activepieces-cache
 
 secrets:
   npmrc:

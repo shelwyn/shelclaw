@@ -5,14 +5,14 @@ export interface PromptToolCall {
   arguments: string
 }
 
-const START = '<opencodex_tool>'
-const END = '</opencodex_tool>'
-const FENCE = /```(?:opencodex-tool|json)?\s*([\s\S]*?)```/gi
+const START = '<shelclaw_tool>'
+const END = '</shelclaw_tool>'
+const FENCE = /```(?:shelclaw-tool|json)?\s*([\s\S]*?)```/gi
 
 export function parseToolPayload(raw: string): PromptToolCall | null {
   let text = raw.trim()
   if (!text) return null
-  const fenced = /^```(?:opencodex-tool|json)?\s*([\s\S]*?)\s*```$/i.exec(text)
+  const fenced = /^```(?:shelclaw-tool|json)?\s*([\s\S]*?)\s*```$/i.exec(text)
   if (fenced) text = fenced[1].trim()
   try {
     const value = JSON.parse(text)
@@ -54,7 +54,7 @@ export function extractPromptToolText(input: string): { text: string; calls: Pro
   text += input.slice(cursor)
 
   if (!calls.length) {
-    // Also accept a fenced ```opencodex-tool block for harnesses that prefer fences.
+    // Also accept a fenced ```shelclaw-tool block for harnesses that prefer fences.
     while ((match = FENCE.exec(text))) {
       const parsed = parseToolPayload(match[0])
       if (!parsed) continue
@@ -75,9 +75,9 @@ function partialMarkerLength(text: string): number {
 }
 
 /**
- * Streaming filter that hides <opencodex_tool> blocks from the UI and turns
+ * Streaming filter that hides <shelclaw_tool> blocks from the UI and turns
  * them into tool calls after the block closes. This lets harnesses without
- * native function calling use OpenCodex delegation.
+ * native function calling use Shelclaw delegation.
  */
 export class PromptToolFilter {
   private buffer = ''

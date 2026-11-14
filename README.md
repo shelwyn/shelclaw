@@ -1,8 +1,8 @@
-# OpenCodex
+# Shelclaw
 
 A local-first, project-first workspace for orchestrating **local agent harnesses**. Each project owns its own Orchestrator, agents and chats. Agents run in parallel, report their finished work back to the conversation, and can share memory through a graph in the right-hand inspector.
 
-![OpenCodex project workspace](docs/screenshot-project.png)
+![Shelclaw project workspace](docs/screenshot-project.png)
 
 ## What it does
 
@@ -28,8 +28,8 @@ A local-first, project-first workspace for orchestrating **local agent harnesses
 Requirements: **Node 24+** and an OpenCode installation (`opencode`), either as a local CLI or a running `opencode serve` instance.
 
 ```bash
-git clone <your-github-repo-url> opencodex
-cd opencodex
+git clone https://github.com/shelwyn/shelclaw.git shelclaw
+cd shelclaw
 npm ci
 npm run build
 npm start
@@ -45,7 +45,7 @@ npm run dev
 # api: http://localhost:8787
 ```
 
-The SQLite database lives in `./data/opencodex.db` by default. Set `DATA_DIR` to move it. Harness connections, projects, agents, chats, reports and memory all persist across restarts.
+The SQLite database lives in `./data/shelclaw.db` by default. Set `DATA_DIR` to move it. Harness connections, projects, agents, chats, reports and memory all persist across restarts.
 
 1. Click **New project** and give it a name, brief and **required workspace folder**.
 2. Open **Settings → Connect Harness** and connect OpenCode.
@@ -122,7 +122,7 @@ All execution output lives in `<workspace>/runtime_files`. Files an agent mentio
 
 ## Message queue
 
-Each chat accepts messages while a run is active. Instead of rejecting the message, OpenCodex stores it in a per-chat queue:
+Each chat accepts messages while a run is active. Instead of rejecting the message, Shelclaw stores it in a per-chat queue:
 
 - queued messages appear as dashed bubbles in the conversation and can be removed individually
 - when the current run finishes, the next queued message starts automatically, in order
@@ -149,7 +149,7 @@ Create agents with **+** in the Agents section. Give each agent a clear name and
 
 Clicking an agent opens a persistent **direct chat** with that agent. A direct chat still supports delegation and reports; if you archive or delete the direct chat, clicking the agent creates a fresh one.
 
-Non-root chats show an **Orchestrator** link in the header that opens the latest root chat. From the Orchestrator or a delegating agent, OpenCodex also exposes a `send_to_chat` tool: the model can send a complete task or command to any existing chat in the project (including direct agent chats) by id or exact title. The target chat starts in parallel, or queues the message if it is already running.
+Non-root chats show an **Orchestrator** link in the header that opens the latest root chat. From the Orchestrator or a delegating agent, Shelclaw also exposes a `send_to_chat` tool: the model can send a complete task or command to any existing chat in the project (including direct agent chats) by id or exact title. The target chat starts in parallel, or queues the message if it is already running.
 
 ### Activity and usage
 
@@ -158,7 +158,7 @@ Non-root chats show an **Orchestrator** link in the header that opens the latest
 
 ## Agent reports
 
-When a delegated task completes, OpenCodex inserts an **agent message** into the originating root chat (normally the project Orchestrator chat):
+When a delegated task completes, Shelclaw inserts an **agent message** into the originating root chat (normally the project Orchestrator chat):
 
 - the agent's name, colour and model
 - the task title and status
@@ -224,13 +224,13 @@ For HTTP servers, credential headers can be entered as HTTP headers. Environment
 | **OpenCode server** | Connects to a running `opencode serve` over HTTP using its URL and password. Models use `providerID/modelID`. |
 | **OpenCode CLI** | Runs `opencode run` locally with your OpenCode config and credentials. |
 
-Direct model APIs (OpenAI, Azure OpenAI, Anthropic, Ollama, LM Studio, etc.) are intentionally **not** supported. OpenCodex only orchestrates OpenCode.
+Direct model APIs (OpenAI, Azure OpenAI, Anthropic, Ollama, LM Studio, etc.) are intentionally **not** supported. Shelclaw only orchestrates OpenCode.
 
 ### Connecting to an OpenCode server
 
 OpenCode v2 exposes an HTTP API. This integration talks to it server-side; it requires a v2 build (`opencode serve`, tested with v2.1.4).
 
-![OpenCode server setup in OpenCodex](docs/opencode-server.png)
+![OpenCode server setup in Shelclaw](docs/opencode-server.png)
 
 Start it on the machine that has your models and credentials:
 
@@ -255,7 +255,7 @@ Use those in **Settings → Connect Harness → Add harness → OpenCode server*
 3. **Test connection** → **Fetch models** → save.
 4. Optional: choose the **OpenCode agent** (`build`, `plan`, `general`, or a custom id).
 
-`0.0.0.0` is a bind address, not a connect address. OpenCodex rewrites it to `127.0.0.1`; use the machine's LAN IP when connecting from another device.
+`0.0.0.0` is a bind address, not a connect address. Shelclaw rewrites it to `127.0.0.1`; use the machine's LAN IP when connecting from another device.
 
 The generated password changes whenever the server restarts. For a stable setup:
 
@@ -263,9 +263,9 @@ The generated password changes whenever the server restarts. For a stable setup:
 OPENCODE_PASSWORD='choose-a-strong-password' opencode serve --hostname 0.0.0.0 --port 4096
 ```
 
-OpenCodex authenticates over HTTP Basic auth (`opencode:<password>`) entirely server-side. Do not expose the OpenCode port to the public internet without TLS and network controls.
+Shelclaw authenticates over HTTP Basic auth (`opencode:<password>`) entirely server-side. Do not expose the OpenCode port to the public internet without TLS and network controls.
 
-Each run creates an OpenCode session titled `OpenCodex · …`. OpenCode's own tools run inside that session. The session working directory is always the project's `runtime_files` folder.
+Each run creates an OpenCode session titled `Shelclaw · …`. OpenCode's own tools run inside that session. The session working directory is always the project's `runtime_files` folder.
 
 ### Model selection order
 
@@ -322,14 +322,14 @@ The harness working directory is not configurable; every run uses the project's 
 Every agent run gets a delegation protocol when it can delegate and the project has specialist agents:
 
 ```xml
-<opencodex_tool>
+<shelclaw_tool>
 {"name":"spawn_agents","arguments":{"tasks":[
   {"title":"Research the options","instructions":"Complete, self-contained brief…","agent":"Researcher","model":"optional-model"}
 ]}}
-</opencodex_tool>
+</shelclaw_tool>
 ```
 
-OpenCodex:
+Shelclaw:
 
 1. Streams the harness output while hiding the protocol block from the UI.
 2. Parses the block into tasks.
@@ -371,7 +371,7 @@ Everything lives in one SQLite database (WAL mode):
 - uploaded-file metadata, archive state, agent reports and memory links/notes
 - workspace settings
 
-Bare metal: `DATA_DIR/opencodex.db` (default `./data/opencodex.db`). Docker: the `opencodex-data` volume mounted at `/data`. Restarting the app or container does **not** clear it.
+Bare metal: `DATA_DIR/shelclaw.db` (default `./data/shelclaw.db`). Docker: the `shelclaw-data` volume mounted at `/data`. Restarting the app or container does **not** clear it.
 
 The encryption key is `DATA_DIR/secret.key` (mode `0600`). It is created automatically and is part of the Docker data volume. Back it up with the database; without it, encrypted credentials cannot be recovered.
 
@@ -381,9 +381,9 @@ The database file itself is not encrypted, but secrets inside it are. Protect it
 
 ## Self-hosted stack with Activepieces
 
-OpenCodex is designed to own agent orchestration while Activepieces owns external integrations and workflow automation. The integration architecture is documented in [docs/activepieces-integration-plan.md](docs/activepieces-integration-plan.md).
+Shelclaw is designed to own agent orchestration while Activepieces owns external integrations and workflow automation. The integration architecture is documented in [docs/activepieces-integration-plan.md](docs/activepieces-integration-plan.md).
 
-Activepieces Community Edition core is MIT licensed and self-hostable. OpenCodex integrates its engine through APIs/MCP and links out to the Activepieces builder UI; it does not embed the enterprise builder or use Activepieces as the orchestration engine.
+Activepieces Community Edition core is MIT licensed and self-hostable. Shelclaw integrates its engine through APIs/MCP and links out to the Activepieces builder UI; it does not embed the enterprise builder or use Activepieces as the orchestration engine.
 
 **Settings → Activepieces** connects the self-hosted MCP endpoint through the existing encrypted MCP vault. Build flows and service connections in the Activepieces UI, then let agents call its tools via `mcp_call`. Flow syncing, per-flow instructions and approval policies are the next implementation phases in the plan.
 
@@ -393,7 +393,7 @@ After pulling the repository:
 ./selfhost.sh              # first run generates .selfhost/*.env and starts everything
 ./selfhost.sh status       # container status
 ./selfhost.sh logs         # follow logs
-./selfhost.sh backup       # database + OpenCodex data + config backups
+./selfhost.sh backup       # database + Shelclaw data + config backups
 ./selfhost.sh down         # stop, keep volumes
 ./selfhost.sh reset --yes  # remove containers and data volumes (destructive)
 ```
@@ -402,14 +402,14 @@ Services and exposed ports:
 
 | Service | Host port | Internal port | Purpose |
 | --- | --- | --- | --- |
-| OpenCodex | 8787 | 8787 | UI, API, orchestrator |
+| Shelclaw | 8787 | 8787 | UI, API, orchestrator |
 | Activepieces app/API | 8080 | 80 | Flow builder, REST API, MCP endpoint |
 | Activepieces worker | — | — | Flow execution |
 | Activepieces PostgreSQL | — | 5432 | Flows, runs, connections, pgvector |
 | Activepieces Redis | — | 6379 | Queue/cache |
 | OpenCode server (host) | 4096 | host.docker.internal:4096 | Agent harness |
 
-Generated secrets live in `.selfhost/activepieces.env` and `.selfhost/opencodex.env` (gitignored). Back them up together with the Activepieces PostgreSQL volume and the `opencodex-data` volume.
+Generated secrets live in `.selfhost/activepieces.env` and `.selfhost/shelclaw.env` (gitignored). Back them up together with the Activepieces PostgreSQL volume and the `shelclaw-data` volume.
 
 ## Deployment
 
@@ -421,7 +421,7 @@ docker compose up -d --build
 # http://localhost:8787
 ```
 
-The app and its SQLite database are stored in the **`opencodex-data` named volume**. Harness connections, projects, agents, chats, uploads and memory survive container rebuilds and restarts.
+The app and its SQLite database are stored in the **`shelclaw-data` named volume**. Harness connections, projects, agents, chats, uploads and memory survive container rebuilds and restarts.
 
 - `docker compose down` keeps the data volume.
 - `docker compose down -v` deletes the database and all app data.
@@ -433,12 +433,12 @@ Back up or restore the database:
 
 ```bash
 # backup
-docker run --rm -v opencodex-data:/data -v "$PWD":/backup alpine \
-  tar czf /backup/opencodex-data.tgz -C /data .
+docker run --rm -v shelclaw-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/shelclaw-data.tgz -C /data .
 
 # restore (stops nothing; restart the container afterwards)
-docker run --rm -v opencodex-data:/data -v "$PWD":/backup alpine \
-  tar xzf /backup/opencodex-data.tgz -C /data
+docker run --rm -v shelclaw-data:/data -v "$PWD":/backup alpine \
+  tar xzf /backup/shelclaw-data.tgz -C /data
 docker compose restart
 ```
 
@@ -454,7 +454,7 @@ Or build directly:
 
 ```bash
 cp ~/.npmrc .npmrc.local
-docker build --secret id=npmrc,src=.npmrc.local -t opencodex .
+docker build --secret id=npmrc,src=.npmrc.local -t shelclaw .
 rm .npmrc.local
 ```
 
@@ -465,26 +465,26 @@ Multi-arch images build natively on Apple Silicon, x86 PCs and **64-bit** Raspbe
 ### Plain Node
 
 ```bash
-git clone <your-github-repo-url> opencodex
-cd opencodex
+git clone https://github.com/shelwyn/shelclaw.git shelclaw
+cd shelclaw
 npm ci
 npm run build
-HOST=0.0.0.0 PORT=8787 DATA_DIR=/var/lib/opencodex npm start
+HOST=0.0.0.0 PORT=8787 DATA_DIR=/var/lib/shelclaw npm start
 ```
 
 Put it behind Caddy/nginx for HTTPS and set `APP_TOKEN` when exposing it beyond localhost. Example systemd unit:
 
 ```ini
 [Unit]
-Description=OpenCodex
+Description=Shelclaw
 After=network-online.target
 
 [Service]
-WorkingDirectory=/opt/opencodex
-Environment=HOST=127.0.0.1 PORT=8787 DATA_DIR=/var/lib/opencodex
+WorkingDirectory=/opt/shelclaw
+Environment=HOST=127.0.0.1 PORT=8787 DATA_DIR=/var/lib/shelclaw
 ExecStart=/usr/bin/node server/dist/index.js
 Restart=always
-User=opencodex
+User=shelclaw
 
 [Install]
 WantedBy=multi-user.target

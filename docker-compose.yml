@@ -1,5 +1,5 @@
 services:
-  opencodex:
+  shelclaw:
     build:
       context: .
       secrets:
@@ -12,12 +12,12 @@ services:
       DATA_DIR: /data
       APP_TOKEN: ${APP_TOKEN:-}
     volumes:
-      - opencodex-data:/data
+      - shelclaw-data:/data
     restart: unless-stopped
 
 volumes:
-  opencodex-data:
-    name: opencodex-data
+  shelclaw-data:
+    name: shelclaw-data
 
 secrets:
   npmrc:

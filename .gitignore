@@ -1,15 +1,56 @@
+# Dependencies and build output
 node_modules/
 dist/
+*.tsbuildinfo
+coverage/
+
+# Local runtime data
 data/
+.selfhost/
+backups/
+runtime_files/
+workspaces/
+artifacts/
+reports/
+tmp/
+
+# Secrets and local config
 .env
 .env.*
 !.env.example
 *.local
-*.tsbuildinfo
 .npmrc.local
-.DS_Store
-npm-debug.log*
-coverage/
 
-.selfhost/
-backups/
+# Python / notebooks
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+npm-debug.log*
+*.log
+
+# Agent-generated root artifacts (keep the repository app-only)
+/sales_forecast_*
+/inventory_*
+/least_performing_*
+/customer_experience_*
+/layout.png
+/*.xlsx
+/*.xls
+/*.docx
+/*.pdf
+/*.png
+/*.jpg
+/*.jpeg
+/*.eml
+/*.sql
+/*.tgz

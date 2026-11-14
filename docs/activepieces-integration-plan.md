@@ -1,38 +1,38 @@
 # Activepieces Integration Plan
 
-Status: proposed. This document describes how OpenCodex will integrate the self-hosted Activepieces engine without embedding the Activepieces builder UI or using Activepieces as the orchestration engine.
+Status: proposed. This document describes how Shelclaw will integrate the self-hosted Activepieces engine without embedding the Activepieces builder UI or using Activepieces as the orchestration engine.
 
 ## 1. Responsibilities
 
 | Layer | Responsibility |
 | --- | --- |
 | OpenCode | Agent execution |
-| OpenCodex Orchestrator | Multi-agent coordination, routing, reports |
+| Shelclaw Orchestrator | Multi-agent coordination, routing, reports |
 | Memory graph | Agent knowledge and relationships |
 | PGVector | Semantic retrieval (future retrieval service) |
 | Activepieces | External integrations, connected apps and workflow automation |
 | MCP | Tool communication between agents and Activepieces |
 
-OpenCodex owns intelligence and conversation state. Activepieces owns external actions, connections and durable automation.
+Shelclaw owns intelligence and conversation state. Activepieces owns external actions, connections and durable automation.
 
 ## 2. Licensing boundaries
 
 - Community Edition core is MIT licensed and can be self-hosted, modified and used commercially.
 - Enterprise-only features require a commercial licence.
-- The official embedded builder is an enterprise capability. OpenCodex will **not** embed it.
-- OpenCodex will link out to the self-hosted Activepieces UI for building flows and OAuth connections.
-- OpenCodex will communicate through documented APIs and MCP only.
+- The official embedded builder is an enterprise capability. Shelclaw will **not** embed it.
+- Shelclaw will link out to the self-hosted Activepieces UI for building flows and OAuth connections.
+- Shelclaw will communicate through documented APIs and MCP only.
 
 ## 3. Architecture
 
 ```text
 Browser
-  ├─ OpenCodex UI (our frontend)
+  ├─ Shelclaw UI (our frontend)
   │    ├─ settings/Activepieces
   │    ├─ flow picker + per-flow instructions
   │    └─ chat + tool-call status
   │
-  ├─ OpenCodex server
+  ├─ Shelclaw server
   │    ├─ existing orchestrator + agents
   │    ├─ Activepieces client (API + MCP)
   │    ├─ encrypted integration vault (existing)
@@ -49,14 +49,14 @@ Browser
 
 | Service | Host port | Internal port | Purpose |
 | --- | ---: | ---: | --- |
-| OpenCodex app | 8787 | 8787 | UI, API, SSE, orchestrator |
+| Shelclaw app | 8787 | 8787 | UI, API, SSE, orchestrator |
 | Activepieces app/API | 8080 | 80 | Builder UI, REST API, MCP endpoint |
 | Activepieces worker | none | none | Flow execution |
 | Activepieces PostgreSQL | none | 5432 | Flows, runs, connections, pgvector |
 | Activepieces Redis | none | 6379 | Job queue/cache |
 | OpenCode server | 4096 (host) | host.docker.internal:4096 | Agent harness |
 
-`./selfhost.sh up` starts OpenCodex, Activepieces app/worker, PostgreSQL and Redis. Only 8787 and 8080 are exposed by default.
+`./selfhost.sh up` starts Shelclaw, Activepieces app/worker, PostgreSQL and Redis. Only 8787 and 8080 are exposed by default.
 
 ## 5. Settings → Activepieces
 
@@ -158,7 +158,7 @@ Example:
 Files added:
 
 - `selfhost.sh` — generates secrets/config if missing, builds and starts the stack.
-- `docker-compose.selfhost.yml` — OpenCodex + Activepieces app/worker + PostgreSQL/Redis.
+- `docker-compose.selfhost.yml` — Shelclaw + Activepieces app/worker + PostgreSQL/Redis.
 - `.selfhost/*.env` — generated, gitignored secrets.
 - `backups/` — gitignored backup output.
 
@@ -221,7 +221,7 @@ All services are one repository and one compose project. The app still builds fr
 - Tool outputs are untrusted data.
 - Approval gates for destructive or customer-facing actions.
 - Activepieces stays on a private network; only its UI port is exposed intentionally.
-- Back up `.selfhost/*.env`, `secret.key`, OpenCodex data volume and Activepieces PostgreSQL volume.
+- Back up `.selfhost/*.env`, `secret.key`, Shelclaw data volume and Activepieces PostgreSQL volume.
 
 ## 11. Risks
 
@@ -233,9 +233,9 @@ All services are one repository and one compose project. The app still builds fr
 
 ## 12. Acceptance criteria
 
-- `git pull && ./selfhost.sh` starts OpenCodex and Activepieces with persistent data.
+- `git pull && ./selfhost.sh` starts Shelclaw and Activepieces with persistent data.
 - Settings → Activepieces tests the connection without exposing credentials.
 - Flows can be synced, enabled, and given agent instructions.
 - A chat request can trigger an Activepieces action/flow and show its result.
 - Credentials never appear in prompts, API responses or logs.
-- Restarting containers preserves settings, flows, credentials and OpenCodex data.
+- Restarting containers preserves settings, flows, credentials and Shelclaw data.

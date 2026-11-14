@@ -691,7 +691,7 @@ export function deleteProject(projectId: string): boolean {
 
 /* ----------------------------------- agents ----------------------------------- */
 
-export const ORCHESTRATOR_PROMPT = `You are the project Orchestrator in OpenCodex.
+export const ORCHESTRATOR_PROMPT = `You are the project Orchestrator in Shelclaw.
 
 You are responsible for the user's outcome. You have full research and planning capabilities: investigate the request, gather context, reason through options, and produce a concrete plan yourself before considering delegation.
 
@@ -1267,7 +1267,7 @@ export function getSettings(): AppSettings {
     maxParallel: Number(map.get('maxParallel') || 4),
     maxAgents: Number(map.get('maxAgents') || 24),
     maxSteps: Number(map.get('maxSteps') || 8),
-    workspaceName: map.get('workspaceName') || 'OpenCodex',
+    workspaceName: map.get('workspaceName') || 'Shelclaw',
     autoTitle: map.get('autoTitle') !== 'false',
   }
 }

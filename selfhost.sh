@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
-# OpenCodex self-hosted stack:
-#   - OpenCodex app
+# Shelclaw self-hosted stack:
+#   - Shelclaw app
 #   - Activepieces app + worker
 #   - Activepieces PostgreSQL (pgvector image)
 #   - Activepieces Redis
@@ -20,7 +20,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 CONFIG_DIR="$ROOT/.selfhost"
 AP_ENV="$CONFIG_DIR/activepieces.env"
-APP_ENV="$CONFIG_DIR/opencodex.env"
+APP_ENV="$CONFIG_DIR/shelclaw.env"
 COMPOSE="docker compose --env-file $AP_ENV -f docker-compose.selfhost.yml"
 
 say() { printf '%s\n' "$1"; }
@@ -60,7 +60,7 @@ ensure_config() {
   if [ ! -f "$APP_ENV" ]; then
     cat >"$APP_ENV" <<EOF
 HOST=0.0.0.0
-PORT=${OPENCODEX_PORT:-8787}
+PORT=${SHELCLAW_PORT:-8787}
 DATA_DIR=/data
 APP_TOKEN=${APP_TOKEN:-}
 ACTIVEPIECES_BASE_URL=http://activepieces-app:80
@@ -71,11 +71,11 @@ EOF
   if [ ! -f "$AP_ENV" ]; then
     ap_version="$(resolve_ap_version)"
     port="${ACTIVEPIECES_PORT:-8080}"
-    app_port="${OPENCODEX_PORT:-8787}"
+    app_port="${SHELCLAW_PORT:-8787}"
     cat >"$AP_ENV" <<EOF
 AP_VERSION=$ap_version
 ACTIVEPIECES_PORT=$port
-OPENCODEX_PORT=$app_port
+SHELCLAW_PORT=$app_port
 AP_EDITION=ee
 AP_ENVIRONMENT=prod
 AP_EXECUTION_MODE=SANDBOX_CODE_ONLY
@@ -93,7 +93,7 @@ AP_REDIS_PORT=6379
 AP_TELEMETRY_ENABLED=false
 EOF
     say "Created $AP_ENV"
-    say "Back up .selfhost/activepieces.env and .selfhost/opencodex.env."
+    say "Back up .selfhost/activepieces.env and .selfhost/shelclaw.env."
   fi
 }
 
@@ -118,11 +118,11 @@ start() {
   say "Building and starting the self-hosted stack..."
   $COMPOSE up -d --build
   ap_port="$(grep '^ACTIVEPIECES_PORT=' "$AP_ENV" | cut -d= -f2)"
-  opencodex_port="$(grep '^PORT=' "$APP_ENV" | cut -d= -f2)"
+  shelclaw_port="$(grep '^PORT=' "$APP_ENV" | cut -d= -f2)"
   say ""
-  say "OpenCodex     http://localhost:${opencodex_port:-8787}"
+  say "Shelclaw     http://localhost:${shelclaw_port:-8787}"
   say "Activepieces  http://localhost:${ap_port:-8080}"
-  wait_http "http://localhost:${opencodex_port:-8787}/api/health" "OpenCodex" || true
+  wait_http "http://localhost:${shelclaw_port:-8787}/api/health" "Shelclaw" || true
   wait_http "http://localhost:${ap_port:-8080}/api/v1/health" "Activepieces" || true
   say ""
   say "Services:"
@@ -155,11 +155,11 @@ case "${1:-up}" in
     db_user="$(grep '^AP_POSTGRES_USERNAME=' "$AP_ENV" | cut -d= -f2)"
     say "Backing up Activepieces database..."
     $COMPOSE exec -T activepieces-postgres pg_dump -U "${db_user:-postgres}" "${db_name:-activepieces}" >"$ROOT/backups/activepieces-$stamp.sql"
-    say "Backing up OpenCodex data volume..."
-    docker run --rm -v opencodex-data:/data -v "$ROOT/backups":/backup alpine \
-      tar czf "/backup/opencodex-data-$stamp.tgz" -C /data .
+    say "Backing up Shelclaw data volume..."
+    docker run --rm -v shelclaw-data:/data -v "$ROOT/backups":/backup alpine \
+      tar czf "/backup/shelclaw-data-$stamp.tgz" -C /data .
     cp "$AP_ENV" "$ROOT/backups/activepieces-env-$stamp"
-    cp "$APP_ENV" "$ROOT/backups/opencodex-env-$stamp"
+    cp "$APP_ENV" "$ROOT/backups/shelclaw-env-$stamp"
     say "Backup written to $ROOT/backups"
     ;;
   reset)

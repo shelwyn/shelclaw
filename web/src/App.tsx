@@ -15,7 +15,7 @@ import { Button } from './components/ui'
 function Splash() {
   return (
     <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-5 bg-bg">
-      <div className="text-[15px] font-semibold tracking-[-0.02em] text-ink">OpenCodex</div>
+      <div className="text-[15px] font-semibold tracking-[-0.02em] text-ink">Shelclaw</div>
       <div className="flex items-center gap-2 text-[11.5px] text-muted">
         <Loader2 className="spin h-3.5 w-3.5" />
         Starting your workspace…
@@ -75,8 +75,8 @@ export default function App() {
 
   useEffect(() => {
     document.title = chatTitle
-      ? `${chatTitle} · ${workspaceName || 'OpenCodex'}`
-      : `${workspaceName || 'OpenCodex'}`
+      ? `${chatTitle} · ${workspaceName || 'Shelclaw'}`
+      : `${workspaceName || 'Shelclaw'}`
   }, [chatTitle, workspaceName])
 
   useEffect(() => {

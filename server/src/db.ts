@@ -271,7 +271,7 @@ const defaultSettings: Record<string, string> = {
   maxParallel: '4',
   maxAgents: '24',
   maxSteps: '8',
-  workspaceName: 'OpenCodex',
+  workspaceName: 'Shelclaw',
   autoTitle: 'true',
 }
 

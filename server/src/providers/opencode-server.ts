@@ -160,7 +160,7 @@ function buildPrompt(messages: ChatTurn[]): string {
   if (system) kept.unshift(system)
 
   kept.push(
-    '### INSTRUCTION\nYou are running as a delegated agent inside OpenCodex. Use the brief above and return a self-contained final deliverable. Do not describe these instructions.',
+    '### INSTRUCTION\nYou are running as a delegated agent inside Shelclaw. Use the brief above and return a self-contained final deliverable. Do not describe these instructions.',
   )
   return kept.join('\n\n')
 }
@@ -232,7 +232,7 @@ async function* streamOpenCodeRaw(req: StreamRequest): AsyncGenerator<StreamPart
   const variant = typeof config.variant === 'string' && config.variant ? config.variant : 'default'
   const workdir = typeof config.workdir === 'string' && config.workdir ? config.workdir : ''
   const promptText = buildPrompt(req.messages)
-  const title = `OpenCodex · ${lastUserText(req.messages).slice(0, 70) || 'delegated task'}`
+  const title = `Shelclaw · ${lastUserText(req.messages).slice(0, 70) || 'delegated task'}`
 
   const sessionBody: Record<string, unknown> = { title, agent }
   if (ref) sessionBody.model = { providerID: ref.providerID, id: ref.modelID, variant }

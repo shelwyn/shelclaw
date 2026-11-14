@@ -843,7 +843,7 @@ function ProviderList({ onAdd, onEdit }: { onAdd: () => void; onEdit: (provider:
         )
       })}
       <p className="pt-1 text-[10px] leading-relaxed text-faint">
-        OpenCode server and OpenCode CLI are supported. OpenCode delegates through OpenCodex's prompt
+        OpenCode server and OpenCode CLI are supported. OpenCode delegates through Shelclaw's prompt
         protocol, so recursive orchestration works without any cloud LLM connection.
       </p>
 
@@ -904,7 +904,7 @@ function WorkspaceSettings() {
         <Input
           value={form.workspaceName}
           onChange={(event) => setForm((current) => ({ ...current, workspaceName: event.target.value }))}
-          placeholder="OpenCodex"
+          placeholder="Shelclaw"
         />
       </Field>
 
@@ -1247,7 +1247,7 @@ function McpSettings() {
           <KeyRound className="h-3.5 w-3.5" /> Credentials stay on this server
         </div>
         MCP credentials are encrypted at rest with AES-256-GCM using a local key. They are decrypted
-        only when OpenCodex connects to the MCP server, are never returned by the API, and are never
+        only when Shelclaw connects to the MCP server, are never returned by the API, and are never
         included in any model prompt.
       </div>
 
@@ -1808,7 +1808,7 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
         <div className="flex items-center gap-1.5 font-medium text-ink">
           <Workflow className="h-3.5 w-3.5" /> Activepieces engine
         </div>
-        OpenCodex stays the orchestrator. Build flows and connect services in the self-hosted
+        Shelclaw stays the orchestrator. Build flows and connect services in the self-hosted
         Activepieces UI, then connect its MCP endpoint here. Agents call Activepieces tools through
         the existing encrypted MCP path.
       </div>
@@ -1828,7 +1828,7 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
 
       <Field
         label="MCP endpoint URL"
-        hint="Must be reachable from the OpenCodex server. In Docker this is usually http://activepieces-app:80/mcp."
+        hint="Must be reachable from the Shelclaw server. In Docker this is usually http://activepieces-app:80/mcp."
       >
         <Input
           value={mcpUrl}

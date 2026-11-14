@@ -158,7 +158,7 @@ async function withStdioServer<T>(
     await request('initialize', {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'OpenCodex', version: '0.1.0' },
+      clientInfo: { name: 'Shelclaw', version: '0.1.0' },
     })
     await notify('notifications/initialized')
     return await fn({ request, notify })
@@ -245,7 +245,7 @@ async function withHttpServer<T>(
   await request('initialize', {
     protocolVersion: PROTOCOL_VERSION,
     capabilities: {},
-    clientInfo: { name: 'OpenCodex', version: '0.1.0' },
+    clientInfo: { name: 'Shelclaw', version: '0.1.0' },
   })
   await notify('notifications/initialized')
   return fn({ request, notify })

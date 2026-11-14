@@ -277,6 +277,9 @@ const defaultSettings: Record<string, string> = {
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [key, value] of Object.entries(defaultSettings)) insertSetting.run(key, value)
+db.prepare(
+  "UPDATE settings SET value = 'Shelclaw' WHERE key = 'workspaceName' AND value IN ('OpenCodex', 'opencodex')",
+).run()
 
 export function closeDb() {
   try {

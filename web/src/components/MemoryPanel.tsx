@@ -60,16 +60,22 @@ function MemoryCanvas({
     moved: boolean
   } | null>(null)
 
-  const columns = width >= 860 ? 5 : width >= 680 ? 4 : width >= 470 ? 3 : 2
+  const baseColumns = width >= 860 ? 5 : width >= 680 ? 4 : width >= 470 ? 3 : 2
+  const columns = expanded && graph.agents.length <= 4 ? 2 : baseColumns
   const gap = 10
-  const nodeWidth = Math.max(118, (width - gap * (columns - 1)) / columns)
+  const columnWidth = Math.max(118, (width - gap * (columns - 1)) / columns)
+  const nodeWidth = expanded ? Math.min(360, columnWidth) : columnWidth
   const rows = Math.max(1, Math.ceil(graph.agents.length / columns))
   const rowHeight = expanded
-    ? Math.max(118, Math.floor(canvasHeight / rows))
+    ? Math.min(200, Math.max(120, Math.floor(canvasHeight / rows)))
     : 88
+  const gridWidth = columns * columnWidth + gap * (columns - 1)
+  const gridHeight = rows * rowHeight
+  const offsetX = Math.max(0, (width - gridWidth) / 2)
+  const offsetY = expanded ? Math.max(0, (canvasHeight - gridHeight) / 2) : 0
   const height = expanded
-    ? Math.max(canvasHeight, rows * rowHeight, 320)
-    : Math.max(140, rows * rowHeight)
+    ? Math.max(canvasHeight, gridHeight, 320)
+    : Math.max(140, gridHeight)
 
   useEffect(() => {
     const element = containerRef.current
@@ -91,11 +97,11 @@ function MemoryCanvas({
         const column = index % columns
         return {
           agent,
-          x: column * (nodeWidth + gap) + nodeWidth / 2,
-          y: row * rowHeight + rowHeight / 2,
+          x: offsetX + column * (columnWidth + gap) + columnWidth / 2,
+          y: offsetY + row * rowHeight + rowHeight / 2,
         }
       }),
-    [graph.agents, nodeWidth, rowHeight],
+    [graph.agents, columnWidth, rowHeight, offsetX, offsetY],
   )
 
   const positions = useMemo<Position[]>(

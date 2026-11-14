@@ -17,7 +17,7 @@ import {
   Workflow,
   Zap,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useAppStore } from '../store'
 import type { McpServer, Provider, ProviderKind } from '../types'
@@ -1090,11 +1090,50 @@ function parseCredentialLines(text: string): Record<string, string> | null {
   return result
 }
 
+function openMcpAuthorization(server: McpServer): Promise<void> {
+  const popup = window.open('', '_blank', 'width=620,height=760')
+  return api
+    .startMcpOAuth(server.id, window.location.origin)
+    .then(({ authorizationUrl }) => {
+      if (popup) popup.location.href = authorizationUrl
+      else window.location.href = authorizationUrl
+    })
+    .catch((err) => {
+      popup?.close()
+      throw err
+    })
+}
+
+function useMcpOAuthListener(
+  onSuccess: (serverId: string) => void,
+  onError: (message: string) => void,
+): void {
+  const successRef = useRef(onSuccess)
+  const errorRef = useRef(onError)
+  successRef.current = onSuccess
+  errorRef.current = onError
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      const data = event.data as
+        | { type?: string; ok?: boolean; serverId?: string; error?: string }
+        | undefined
+      if (data?.type !== 'shelclaw:mcp-oauth') return
+      if (data.ok && data.serverId) successRef.current(data.serverId)
+      else errorRef.current(data.error || 'MCP authorization failed.')
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
+}
+
 function McpSettings() {
   const toast = useAppStore((state) => state.toast)
   const [servers, setServers] = useState<McpServer[]>([])
   const [loading, setLoading] = useState(false)
   const [testing, setTesting] = useState('')
+  const [authorizing, setAuthorizing] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<McpServer | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState<McpFormState | null>(null)
@@ -1199,6 +1238,28 @@ function McpSettings() {
     }
   }
 
+  const authorize = async (server: McpServer) => {
+    setAuthorizing(server.id)
+    try {
+      await openMcpAuthorization(server)
+      toast('success', 'Approve the connection in the browser tab, then return here.')
+    } catch (err) {
+      toast('error', errorText(err))
+    } finally {
+      setAuthorizing('')
+    }
+  }
+
+  useMcpOAuthListener(
+    (serverId) => {
+      const server = servers.find((entry) => entry.id === serverId)
+      if (!server) return
+      toast('success', 'MCP authorization complete.')
+      void runTest(server)
+    },
+    (message) => toast('error', message),
+  )
+
   const discoverEditingTools = async () => {
     const server = editingServer
     if (!server) return
@@ -1299,6 +1360,11 @@ function McpSettings() {
                     ) : (
                       <span className="text-[9.5px] text-faint">no credentials</span>
                     )}
+                    {server.hasOAuth ? (
+                      <span className="inline-flex items-center gap-1 text-[9.5px] text-ink">
+                        <KeyRound className="h-2.5 w-2.5" /> OAuth authorized
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-0.5 truncate font-mono text-[10px] text-faint">
                     {server.transport === 'stdio'
@@ -1352,6 +1418,21 @@ function McpSettings() {
                       <Zap className="h-3.5 w-3.5" />
                     )}
                   </button>
+                  {server.transport === 'http' ? (
+                    <button
+                      type="button"
+                      onClick={() => void authorize(server)}
+                      disabled={authorizing === server.id}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-panel2 hover:text-ink disabled:opacity-40"
+                      title="Authorize with OAuth"
+                    >
+                      {authorizing === server.id ? (
+                        <Spinner className="h-3.5 w-3.5" />
+                      ) : (
+                        <KeyRound className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => setEditing(formFromMcp(server))}
@@ -1689,8 +1770,10 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [authorizing, setAuthorizing] = useState(false)
   const [baseUrl, setBaseUrl] = useState('http://localhost:8080')
   const [mcpUrl, setMcpUrl] = useState('http://localhost:8080/mcp')
+  const [uiDefault, setUiDefault] = useState('http://localhost:8080')
   const [headersText, setHeadersText] = useState('')
   const [enabled, setEnabled] = useState(true)
   const [tools, setTools] = useState<string[]>([])
@@ -1703,14 +1786,38 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
     try {
       const result = await api.mcpServers()
       setServers(result.servers)
+      const defaultUi = result.activepieces?.uiUrl || 'http://localhost:8080'
+      const defaultMcp = result.activepieces?.mcpUrl || 'http://localhost:8080/mcp'
+      setUiDefault(defaultUi)
       const active = result.servers.find(
         (server) => server.name.toLowerCase() === 'activepieces',
       )
       if (active) {
         setMcpUrl(active.url)
-        setBaseUrl(active.url.replace(/\/mcp\/?$/i, '') || 'http://localhost:8080')
+        const internalHost = (() => {
+          try {
+            return new URL(defaultMcp).host
+          } catch {
+            return ''
+          }
+        })()
+        const activeHost = (() => {
+          try {
+            return new URL(active.url).host
+          } catch {
+            return ''
+          }
+        })()
+        setBaseUrl(
+          internalHost && activeHost === internalHost
+            ? defaultUi
+            : active.url.replace(/\/mcp\/?$/i, '') || defaultUi,
+        )
         setEnabled(active.enabled)
         setTools(active.tools.map((tool) => tool.name))
+      } else {
+        setMcpUrl(defaultMcp)
+        setBaseUrl(defaultUi)
       }
     } catch (err) {
       toast('error', errorText(err))
@@ -1790,6 +1897,29 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
     }
   }
 
+  const authorize = async () => {
+    if (!existing) return
+    setAuthorizing(true)
+    try {
+      await openMcpAuthorization(existing)
+      toast('success', 'Approve the connection in the browser tab, then return here.')
+    } catch (err) {
+      toast('error', `Activepieces: ${errorText(err)}`)
+    } finally {
+      setAuthorizing(false)
+    }
+  }
+
+  useMcpOAuthListener(
+    (serverId) => {
+      if (existing?.id !== serverId) return
+      toast('success', 'Activepieces authorized.')
+      void load()
+      void test(serverId)
+    },
+    (message) => toast('error', `Activepieces: ${message}`),
+  )
+
   const disconnect = async () => {
     if (!existing) return
     setSaving(true)
@@ -1837,14 +1967,14 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
             setBaseUrl(value)
             setMcpUrl(`${value.replace(/\/$/, '')}/mcp`)
           }}
-          placeholder="http://localhost:8080"
+          placeholder={uiDefault}
           className="font-mono text-[12px]"
         />
       </Field>
 
       <Field
         label="MCP endpoint URL"
-        hint="Must be reachable from the Shelclaw server. In Docker this is usually http://activepieces-app:80/mcp."
+        hint="Must be reachable from the Shelclaw server. In Docker this is auto-filled with http://activepieces-app:80/mcp; localhost:8080 is mapped automatically."
       >
         <Input
           value={mcpUrl}
@@ -1856,7 +1986,7 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
 
       <Field
         label="Headers / token"
-        hint="Optional. Leave blank to keep an existing token. Stored encrypted and never sent to a model."
+        hint="Optional. Prefer “Authorize with Activepieces”. Leave blank to keep an existing token. Stored encrypted and never sent to a model."
       >
         <Textarea
           value={headersText}
@@ -1890,6 +2020,16 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
         >
           <RefreshCw className="h-3.5 w-3.5" /> Test & discover tools
         </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void authorize()}
+          loading={authorizing}
+          disabled={!existing}
+        >
+          <KeyRound className="h-3.5 w-3.5" />{' '}
+          {existing?.hasOAuth ? 'Re-authorize' : 'Authorize with Activepieces'}
+        </Button>
         <a
           href={baseUrl}
           target="_blank"
@@ -1914,6 +2054,7 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
           <div className="flex items-center gap-2 text-[11.5px] text-ink">
             <span className={`h-1.5 w-1.5 rounded-full ${existing.enabled ? 'bg-ink' : 'bg-faint'}`} />
             {existing.enabled ? 'Enabled' : 'Disabled'} · {existing.tools.length} tools discovered
+            {existing.hasOAuth ? ' · OAuth authorized' : ''}
           </div>
           {tools.length ? (
             <div className="mt-1.5 flex flex-wrap gap-1">
@@ -1948,8 +2089,8 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
           <div className="mt-2 text-[12.5px] font-medium text-ink">Activepieces is not connected</div>
           <p className="mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-muted">
             Start the stack with <code className="font-mono">./selfhost.sh</code>, create the first
-            admin account in Activepieces, connect your apps, then paste its MCP endpoint and token
-            above.
+            admin account in Activepieces, connect your apps, then connect the auto-filled MCP
+            endpoint above and authorize access.
           </p>
         </div>
       )}
@@ -2014,9 +2155,11 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
           <div>
             <div className="font-semibold text-ink">4. Enable the Activepieces MCP server</div>
             <p className="mt-1">
-              In Activepieces, open <strong className="text-ink">Settings → MCP Server</strong>,
-              enable it, and copy the server URL and any required token/headers. This is the endpoint
-              Shelclaw will call.
+              In the Activepieces project sidebar, open <strong className="text-ink">MCP</strong> and
+              click <strong className="text-ink">Connect</strong>. Choose{' '}
+              <strong className="text-ink">Any MCP client</strong> or your client to see the project
+              MCP server URL. Activepieces authorizes clients with OAuth; there is no static token to
+              copy.
             </p>
           </div>
 
@@ -2030,12 +2173,22 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
               </li>
               <li>
                 MCP URL when Shelclaw runs in Docker:{' '}
-                <code className="font-mono">http://activepieces-app:80/mcp</code>
+                <code className="font-mono">http://activepieces-app:80/mcp</code> (filled in
+                automatically)
               </li>
-              <li>Paste any required token/header, then click <strong className="text-ink">Connect Activepieces</strong>.</li>
-              <li>Click <strong className="text-ink">Test &amp; discover tools</strong>.</li>
+              <li>
+                Click <strong className="text-ink">Connect Activepieces</strong>, then{' '}
+                <strong className="text-ink">Authorize with Activepieces</strong>. A browser tab asks
+                you to sign in to Activepieces and approve access to the project.
+              </li>
+              <li>Return to Shelclaw and click <strong className="text-ink">Test &amp; discover tools</strong>.</li>
               <li>Open <strong className="text-ink">MCP Servers → Activepieces</strong> to add per-tool instructions.</li>
             </ul>
+            <p className="mt-1 text-[10.5px] text-faint">
+              Access and refresh tokens are stored encrypted, are never sent to a model, and refresh
+              automatically. Click <strong className="text-ink">Re-authorize</strong> if access is
+              revoked or expires.
+            </p>
           </div>
 
           <div>

@@ -1,4 +1,11 @@
 import { spawn } from 'node:child_process'
+import {
+  OAuthRequiredError,
+  effectiveMcpServerUrl,
+  fetchMcpResponse,
+  getMcpAccessToken,
+  hasMcpOAuth,
+} from './mcp-oauth.js'
 import type { McpServerInternal, McpToolSummary } from './types.js'
 
 interface JsonRpcError {
@@ -196,34 +203,84 @@ async function withHttpServer<T>(
   if (!/^https?:\/\//i.test(server.url)) {
     throw new Error('Enter a valid http:// or https:// MCP server URL.')
   }
+  const url = effectiveMcpServerUrl(server)
+  const configuredHeaders: Record<string, string> = {
+    ...server.env,
+    ...server.headers,
+  }
   let sessionId = ''
   let nextId = 1
+  let oauthRetried = false
 
-  const post = async (payload: unknown): Promise<Response> => {
+  const post = async (payload: unknown, token?: string): Promise<Response> => {
     const headers: Record<string, string> = {
-      ...server.env,
-      ...server.headers,
+      ...configuredHeaders,
       'content-type': 'application/json',
       accept: 'application/json, text/event-stream',
     }
+    if (token) {
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase() === 'authorization') delete headers[key]
+      }
+      headers.authorization = `Bearer ${token}`
+    }
     if (sessionId) headers['mcp-session-id'] = sessionId
-    const res = await fetch(server.url, {
+    const res = await fetchMcpResponse(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     const nextSession = res.headers.get('mcp-session-id')
     if (nextSession) sessionId = nextSession
     return res
   }
 
+  const responseDetail = async (res: Response): Promise<string> => {
+    try {
+      const text = (await res.text()).slice(0, 400)
+      if (!text) return ''
+      try {
+        const parsed = JSON.parse(text) as { message?: string; error?: string }
+        return parsed.message || parsed.error || text
+      } catch {
+        return text
+      }
+    } catch {
+      return ''
+    }
+  }
+
+  const send = async (payload: { jsonrpc?: string; id?: number; method: string; params?: unknown }) => {
+    const token = hasMcpOAuth(server) ? await getMcpAccessToken(server) : undefined
+    let res = await post(payload, token)
+    if (res.status === 401 && token && !oauthRetried) {
+      oauthRetried = true
+      await res.text().catch(() => {})
+      const refreshed = await getMcpAccessToken(server, { forceRefresh: true })
+      res = await post(payload, refreshed)
+    }
+    if (res.status === 401) {
+      const detail = await responseDetail(res)
+      const activepieces = server.name.trim().toLowerCase() === 'activepieces'
+      const usefulDetail = activepieces && /authorization:\s*bearer/i.test(detail) ? '' : detail
+      throw new OAuthRequiredError(
+        activepieces
+          ? `Activepieces requires authorization.${usefulDetail ? ` ${usefulDetail}` : ''} Click “Authorize with Activepieces” and approve access in the browser.`
+          : `This MCP server requires authorization.${detail ? ` ${detail}` : ''} Authorize it under Settings → MCP servers.`,
+      )
+    }
+    if (!res.ok) {
+      const detail = await responseDetail(res)
+      throw new Error(
+        `MCP server returned HTTP ${res.status}${detail ? `: ${detail}` : ''}.`,
+      )
+    }
+    return res
+  }
+
   const request = async (method: string, params?: unknown): Promise<unknown> => {
     const requestId = nextId++
-    const res = await post({ jsonrpc: '2.0', id: requestId, method, params })
-    if (!res.ok) {
-      throw new Error(`MCP server returned HTTP ${res.status}.`)
-    }
+    const res = await send({ jsonrpc: '2.0', id: requestId, method, params })
     const text = await res.text()
     const contentType = res.headers.get('content-type') || ''
     const message = contentType.includes('text/event-stream')
@@ -237,8 +294,7 @@ async function withHttpServer<T>(
   }
 
   const notify = async (method: string, params?: unknown): Promise<void> => {
-    const res = await post({ jsonrpc: '2.0', method, params })
-    if (!res.ok) throw new Error(`MCP server returned HTTP ${res.status}.`)
+    const res = await send({ jsonrpc: '2.0', method, params })
     await res.text()
   }
 

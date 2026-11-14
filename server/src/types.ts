@@ -226,6 +226,7 @@ export interface McpServer {
   envKeys: string[]
   hasHeaders: boolean
   headerKeys: string[]
+  hasOAuth: boolean
   tools: McpTool[]
   toolInstructions: Record<string, string>
   createdAt: number
@@ -241,6 +242,17 @@ export interface McpTool {
 export interface McpServerSecrets {
   env: Record<string, string>
   headers: Record<string, string>
+}
+
+export interface McpOAuthTokens {
+  accessToken: string
+  refreshToken: string
+  expiresAt: number
+  tokenEndpoint: string
+  clientId: string
+  clientSecret?: string
+  scope?: string
+  resource?: string
 }
 
 export interface McpServerInternal extends McpServer {

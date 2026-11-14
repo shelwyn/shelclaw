@@ -28,6 +28,14 @@ app.addHook('onRequest', async (req, reply) => {
   if (!config.appToken) return
   if (!req.url.startsWith('/api')) return
   if (req.url.startsWith('/api/health')) return
+  // Browser redirects cannot send an Authorization header. These endpoints are
+  // guarded by a one-time, high-entropy OAuth state instead.
+  if (
+    req.url.startsWith('/api/mcp/oauth/authorize') ||
+    req.url.startsWith('/api/mcp/oauth/callback')
+  ) {
+    return
+  }
   const header = req.headers.authorization || ''
   const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
   const queryToken = (req.query as Record<string, unknown> | undefined)?.token

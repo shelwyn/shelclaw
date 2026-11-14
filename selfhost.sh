@@ -71,6 +71,15 @@ ensure_ca_bundle() {
   say "Warning: no CA bundle found. Piece sync may fail behind a TLS-inspecting proxy."
 }
 
+ensure_env_line() {
+  file="$1"
+  key="$2"
+  value="$3"
+  if [ -f "$file" ] && ! grep -q "^${key}=" "$file"; then
+    printf '%s=%s\n' "$key" "$value" >>"$file"
+  fi
+}
+
 ensure_config() {
   mkdir -p "$CONFIG_DIR"
   ensure_ca_bundle
@@ -82,6 +91,7 @@ DATA_DIR=/data
 APP_TOKEN=${APP_TOKEN:-}
 ACTIVEPIECES_BASE_URL=http://activepieces-app:80
 ACTIVEPIECES_MCP_URL=http://activepieces-app:80/mcp
+ACTIVEPIECES_UI_URL=http://localhost:${ACTIVEPIECES_PORT:-8080}
 EOF
     say "Created $APP_ENV"
   fi
@@ -112,6 +122,10 @@ EOF
     say "Created $AP_ENV"
     say "Back up .selfhost/activepieces.env and .selfhost/shelclaw.env."
   fi
+  ap_port="$(grep '^ACTIVEPIECES_PORT=' "$AP_ENV" 2>/dev/null | cut -d= -f2)"
+  ap_port="${ap_port:-${ACTIVEPIECES_PORT:-8080}}"
+  ensure_env_line "$APP_ENV" ACTIVEPIECES_UI_URL "http://localhost:$ap_port"
+  ensure_env_line "$APP_ENV" ACTIVEPIECES_MCP_URL "http://activepieces-app:80/mcp"
 }
 
 wait_http() {

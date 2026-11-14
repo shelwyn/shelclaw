@@ -65,8 +65,9 @@ New settings tab, separate from MCP Servers.
 Fields:
 
 - **Activepieces URL** (for example `http://localhost:8080`)
-- **API key / MCP credential** (encrypted; never returned by the API)
-- **MCP endpoint URL** (for example `http://localhost:8080/mcp`)
+- **MCP endpoint URL** (for example `http://localhost:8080/mcp`; in Docker `http://activepieces-app:80/mcp`)
+- **OAuth authorization** (browser flow with PKCE; access/refresh tokens encrypted and never returned by the API)
+- **Optional static Authorization header** for MCP servers that do not use OAuth
 - **Project ID** (optional; fetched from the API)
 - **Test connection**
 - **Open Activepieces** link
@@ -200,7 +201,7 @@ All services are one repository and one compose project. The app still builds fr
 
 ### Phase 4 — agent execution
 
-- [ ] MCP endpoint integration and OAuth/credential handling.
+- [x] MCP endpoint integration and OAuth/credential handling (PKCE, encrypted access/refresh tokens, automatic refresh).
 - [ ] `activepieces_run_flow` / `activepieces_run_action`.
 - [ ] Live status, result rendering, run links.
 - [ ] Per-flow approval policy.
@@ -225,8 +226,8 @@ All services are one repository and one compose project. The app still builds fr
 
 ## 11. Risks
 
-- Activepieces API-key availability may depend on edition; MCP may be the primary path.
-- MCP OAuth may require a browser flow; server-side token storage must be designed carefully.
+- Activepieces API-key availability may depend on edition; MCP is the primary path.
+- MCP OAuth requires a browser flow; Shelclaw implements OAuth 2.0 + PKCE, stores tokens encrypted, and refreshes them server-side.
 - Activepieces image/version drift and env changes.
 - Sandboxed execution requires Docker resources; Activepieces recommends at least 2 vCPU / 4 GB RAM.
 - Licensing: keep enterprise-only features out unless a licence is present.

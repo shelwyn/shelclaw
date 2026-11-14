@@ -16,6 +16,7 @@ import type {
   ContextUsage,
   McpServer,
   McpServerInternal,
+  McpOAuthTokens,
   McpTool,
   MemoryGraph,
   Message,
@@ -391,6 +392,7 @@ function mapMcpServer(row: Row): McpServer {
     envKeys: Object.keys(env).sort(),
     hasHeaders: Object.keys(headers).length > 0,
     headerKeys: Object.keys(headers).sort(),
+    hasOAuth: Boolean(row.oauth_cipher),
     tools: parseJson<McpTool[]>(row.tools_json, []),
     toolInstructions: parseJson<Record<string, string>>(row.tool_instructions, {}),
     createdAt: n(row.created_at),
@@ -403,7 +405,8 @@ function mcpRows(): Row[] {
     .prepare(
       `SELECT m.*,
         (SELECT ciphertext FROM integration_secrets s WHERE s.owner_type = 'mcp_server' AND s.owner_id = m.id AND s.name = 'env' LIMIT 1) AS env_cipher,
-        (SELECT ciphertext FROM integration_secrets s WHERE s.owner_type = 'mcp_server' AND s.owner_id = m.id AND s.name = 'headers' LIMIT 1) AS headers_cipher
+        (SELECT ciphertext FROM integration_secrets s WHERE s.owner_type = 'mcp_server' AND s.owner_id = m.id AND s.name = 'headers' LIMIT 1) AS headers_cipher,
+        (SELECT ciphertext FROM integration_secrets s WHERE s.owner_type = 'mcp_server' AND s.owner_id = m.id AND s.name = 'oauth' LIMIT 1) AS oauth_cipher
        FROM mcp_servers m
        ORDER BY m.name COLLATE NOCASE ASC`,
     )
@@ -497,6 +500,24 @@ function saveMcpSecrets(
   }
 }
 
+export function getMcpOAuthTokens(serverId: string): McpOAuthTokens | undefined {
+  const tokens = getIntegrationSecretJson<McpOAuthTokens | null>(
+    'mcp_server',
+    serverId,
+    'oauth',
+    null,
+  )
+  return tokens ?? undefined
+}
+
+export function setMcpOAuthTokens(serverId: string, tokens: McpOAuthTokens): void {
+  setIntegrationSecret('mcp_server', serverId, 'oauth', tokens)
+}
+
+export function clearMcpOAuthTokens(serverId: string): void {
+  deleteIntegrationSecret('mcp_server', serverId, 'oauth')
+}
+
 export function createMcpServer(input: {
   name: string
   description?: string
@@ -564,6 +585,12 @@ export function updateMcpServer(
     serverId,
   )
   saveMcpSecrets(serverId, input.env, input.headers, Boolean(input.clearCredentials))
+  if (
+    (input.url !== undefined && input.url !== existing.url) ||
+    (input.transport !== undefined && input.transport !== existing.transport)
+  ) {
+    clearMcpOAuthTokens(serverId)
+  }
   return getMcpServer(serverId)
 }
 

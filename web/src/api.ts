@@ -153,7 +153,11 @@ export const api = {
     request<Provider>(`/api/providers/${id}`, { method: 'PATCH', ...json(body) }),
   deleteProvider: (id: string) => request<{ ok: boolean }>(`/api/providers/${id}`, { method: 'DELETE' }),
 
-  mcpServers: () => request<{ servers: McpServer[] }>('/api/mcp'),
+  mcpServers: () =>
+    request<{
+      servers: McpServer[]
+      activepieces?: { uiUrl?: string; mcpUrl?: string }
+    }>('/api/mcp'),
   createMcpServer: (
     body: Partial<McpServer> & {
       name: string
@@ -171,6 +175,13 @@ export const api = {
     },
   ) => request<McpServer>(`/api/mcp/${id}`, { method: 'PATCH', ...json(body) }),
   deleteMcpServer: (id: string) => request<{ ok: boolean }>(`/api/mcp/${id}`, { method: 'DELETE' }),
+  startMcpOAuth: (id: string, redirectBaseUrl: string) =>
+    request<{ authorizationUrl: string }>(`/api/mcp/oauth/start/${id}`, {
+      method: 'POST',
+      ...json({ redirectBaseUrl }),
+    }),
+  disconnectMcpOAuth: (id: string) =>
+    request<{ ok: boolean }>(`/api/mcp/${id}/oauth/disconnect`, { method: 'POST' }),
   testMcpServer: (id: string) =>
     request<{
       ok: boolean

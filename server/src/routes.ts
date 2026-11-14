@@ -11,6 +11,12 @@ import { AppError } from './errors.js'
 import { orchestrator } from './orchestrator/engine.js'
 import { listMcpTools, sanitizeMcpError } from './mcp.js'
 import {
+  completeMcpOAuth,
+  disconnectMcpOAuth,
+  fetchAuthorizeRedirect,
+  startMcpOAuth,
+} from './mcp-oauth.js'
+import {
   buildPreview,
   detectMimeType,
   listWorkspaceFiles,
@@ -693,7 +699,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   /* ------------------------------ mcp integrations ----------------------------- */
 
-  app.get('/api/mcp', async () => ({ servers: listMcpServers() }))
+  app.get('/api/mcp', async () => ({
+    servers: listMcpServers(),
+    activepieces: {
+      uiUrl: config.activepiecesUiUrl,
+      mcpUrl: config.activepiecesMcpUrl,
+    },
+  }))
 
   app.post('/api/mcp', async (req) => {
     const input = parse(mcpInput, req.body)
@@ -724,6 +736,89 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/mcp/:id', async (req) => {
     const { id } = req.params as { id: string }
     if (!deleteMcpServer(id)) throw new AppError('MCP server not found.', 404)
+    return { ok: true }
+  })
+
+  app.post('/api/mcp/oauth/start/:id', async (req) => {
+    const { id } = req.params as { id: string }
+    const server = getMcpServerInternal(id)
+    if (!server) throw new AppError('MCP server not found.', 404)
+    const body = (req.body || {}) as { redirectBaseUrl?: string }
+    const redirectBaseUrl =
+      body.redirectBaseUrl?.trim() || `http://localhost:${config.port}`
+    try {
+      return await startMcpOAuth(server, redirectBaseUrl)
+    } catch (err) {
+      throw new AppError(sanitizeMcpError(server, err), 400)
+    }
+  })
+
+  app.get('/api/mcp/oauth/authorize', async (req, reply) => {
+    const { state } = req.query as { state?: string }
+    if (!state) throw new AppError('Missing OAuth state.', 400)
+    const result = await fetchAuthorizeRedirect(state)
+    if ('error' in result) {
+      return reply.code(result.status).type('text/plain').send(result.error)
+    }
+    return reply.code(302).header('cache-control', 'no-store').redirect(result.location)
+  })
+
+  app.get('/api/mcp/oauth/callback', async (req, reply) => {
+    const query = req.query as {
+      code?: string
+      state?: string
+      error?: string
+      error_description?: string
+    }
+    let payload: { ok: boolean; serverId?: string; error?: string }
+    if (query.error) {
+      payload = {
+        ok: false,
+        error: query.error_description || query.error,
+      }
+    } else if (!query.code || !query.state) {
+      payload = { ok: false, error: 'The authorization response was incomplete.' }
+    } else {
+      try {
+        const result = await completeMcpOAuth(query.state, query.code)
+        payload = { ok: true, serverId: result.serverId }
+      } catch (err) {
+        payload = { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+    const json = JSON.stringify({ type: 'shelclaw:mcp-oauth', ...payload }).replace(
+      /</g,
+      '\\u003c',
+    )
+    const title = payload.ok ? 'MCP server connected' : 'MCP authorization failed'
+    const message = payload.ok
+      ? 'MCP server connected. You can close this tab and return to Shelclaw.'
+      : payload.error || 'The MCP authorization failed.'
+    const html = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>${title}</title></head>
+<body style="font:14px system-ui,sans-serif;background:#fff;color:#111;display:grid;place-items:center;min-height:100vh;margin:0">
+  <main style="max-width:28rem;padding:2rem;text-align:center">
+    <h1 style="font-size:1rem;margin:0 0 .5rem">${title}</h1>
+    <p style="margin:0;color:#555;line-height:1.5">${message
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')}</p>
+  </main>
+  <script>
+    const payload = ${json};
+    try { window.opener?.postMessage(payload, window.location.origin); } catch (_) {}
+    if (payload.ok) setTimeout(() => window.close(), 900);
+  </script>
+</body>
+</html>`
+    return reply.header('cache-control', 'no-store').type('text/html').send(html)
+  })
+
+  app.post('/api/mcp/:id/oauth/disconnect', async (req) => {
+    const { id } = req.params as { id: string }
+    if (!getMcpServer(id)) throw new AppError('MCP server not found.', 404)
+    disconnectMcpOAuth(id)
     return { ok: true }
   })
 

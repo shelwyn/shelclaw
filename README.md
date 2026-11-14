@@ -188,9 +188,9 @@ Memory lives in the **right-hand inspector**. Open it with the brain icon next t
 Add MCP servers in **Settings → MCP Servers**. Both transports are supported:
 
 - **stdio** — command and arguments, with encrypted environment variables
-- **HTTP / SSE** — endpoint URL, with encrypted request headers
+- **HTTP / SSE** — endpoint URL, with encrypted request headers or an OAuth 2.0 + PKCE browser flow
 
-Use **Test connection** to initialize the server and list its tools. Enabled servers expose their tools to agents as `mcp_call`; the model sees only server names, tool names, descriptions and input schemas.
+Use **Test connection** to initialize the server and list its tools. HTTP servers that return `401` can be connected with the key button (**Authorize with OAuth**) in the server list or the Activepieces tab. Shelclaw registers itself with the server, opens the consent page, and stores access/refresh tokens encrypted; tokens are refreshed automatically and never returned by the API or sent to a model. Enabled servers expose their tools to agents as `mcp_call`; the model sees only server names, tool names, descriptions and input schemas.
 
 Each MCP server also has an **Instructions for agents** field. That text is injected into the Orchestrator and every agent run, telling them when the server should be used and which tools to prefer. Keep credentials out of this field.
 
@@ -432,7 +432,14 @@ If Activepieces asks you to connect an AI provider or LLM, **skip it**. Shelclaw
 
 For the full app + Activepieces stack, use `./selfhost.sh`. Check status/logs with `./selfhost.sh status` and `./selfhost.sh logs`. If port 8080 is busy, set `ACTIVEPIECES_PORT=8081` before starting.
 
-When Shelclaw runs on the host, use `http://localhost:8080/mcp` as the MCP URL. When Shelclaw runs inside Docker, use `http://activepieces-app:80/mcp`. Enable the MCP server in Activepieces under **Settings → MCP Server** first.
+**Connecting Shelclaw to Activepieces**
+
+1. In the Activepieces project sidebar, open **MCP** and click **Connect**. Choose **Any MCP client** (or your client) to see the project MCP URL.
+2. In Shelclaw, open **Settings → Activepieces**. When Shelclaw runs on the host the MCP URL defaults to `http://localhost:8080/mcp`; inside the Docker stack it defaults to `http://activepieces-app:80/mcp` (and `localhost:8080` is mapped automatically).
+3. Click **Connect Activepieces**, then **Authorize with Activepieces**. Sign in to Activepieces in the browser tab and approve access to the project.
+4. Return to Shelclaw and click **Test & discover tools**.
+
+Activepieces uses OAuth for MCP clients, so there is no static token to copy. Shelclaw registers itself as an OAuth client, stores the access/refresh tokens in the encrypted vault, refreshes them automatically, and never sends them to a model. The `Headers / token` field remains available for MCP servers that use a static bearer token.
 
 If **Connections → All** is empty or **New Connection** says **No pieces found**, Activepieces could not sync its piece catalog. Self-hosted Activepieces fetches pieces over HTTPS from `cloud.activepieces.com`; behind a TLS-inspecting proxy the container needs your CA bundle. The self-host script copies `SSL_CERT_FILE` (or `CA_CERT_FILE`) into `.selfhost/ca.pem` and mounts it into the containers with `NODE_EXTRA_CA_CERTS`. Re-run `./selfhost.sh activepieces` after setting one of those variables, wait for the sync, then refresh.
 
@@ -555,6 +562,7 @@ All endpoints are under `/api`; JSON in/out, SSE at `/api/events`.
 - `DELETE /api/queue/:id` removes a queued message; `POST /api/chats/:id/messages` returns `{queued: true}` when the chat is busy
 - `POST /api/chats/:id/cancel`, `POST /api/runs/:id/cancel`
 - `GET/POST /api/mcp`, `PATCH/DELETE /api/mcp/:id`, `POST /api/mcp/:id/test` — credentials are encrypted and never returned
+- `POST /api/mcp/oauth/start/:id`, `GET /api/mcp/oauth/authorize`, `GET /api/mcp/oauth/callback`, `POST /api/mcp/:id/oauth/disconnect` — OAuth 2.0 with PKCE for MCP servers
 - `PATCH /api/settings`
 
 SSE event types include `message.created`, `message.delta`, `message.completed`, `task.created`, `task.updated`, `run.created`, `run.updated`, `chat.updated`, `chats.changed`, `queue.changed`, `agents.changed`, `memory.changed`, `artifacts.changed`, `toast`.

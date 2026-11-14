@@ -39,4 +39,6 @@ export const config = {
   isProd: process.env.NODE_ENV === 'production' || !process.env.TSX_DEV,
   opencodeBin: process.env.OPENCODE_BIN || 'opencode',
   claudeBin: process.env.CLAUDE_BIN || 'claude',
+  activepiecesMcpUrl: (process.env.ACTIVEPIECES_MCP_URL || '').trim(),
+  activepiecesUiUrl: (process.env.ACTIVEPIECES_UI_URL || '').trim(),
 }

@@ -2,6 +2,7 @@ import {
   Archive,
   ArchiveRestore,
   ArrowLeft,
+  BarChart3,
   Check,
   ChevronDown,
   ChevronsUpDown,
@@ -293,6 +294,33 @@ export function ChatHeader() {
   }
 
   const childrenCount = chats.filter((entry) => entry.parentChatId === chat.id).length
+  const projectChats = chats.filter((entry) => entry.projectId === chat.projectId)
+  const projectTotals = projectChats.reduce(
+    (total, entry) => ({
+      tokens: total.tokens + (entry.usage?.total || 0),
+      cost: total.cost + (entry.usage?.cost || 0),
+    }),
+    { tokens: 0, cost: 0 },
+  )
+  const agentTotals = agents
+    .filter((entry) => entry.projectId === chat.projectId)
+    .map((entry) => {
+      const chatsForAgent = projectChats.filter((item) => item.agentId === entry.id)
+      return {
+        agent: entry,
+        tokens: chatsForAgent.reduce((sum, item) => sum + (item.usage?.total || 0), 0),
+        cost: chatsForAgent.reduce((sum, item) => sum + (item.usage?.cost || 0), 0),
+      }
+    })
+    .sort((a, b) => b.tokens - a.tokens)
+  const chatTotals = projectChats
+    .map((entry) => ({
+      chat: entry,
+      tokens: entry.usage?.total || 0,
+      cost: entry.usage?.cost || 0,
+    }))
+    .filter((entry) => entry.tokens > 0 || entry.cost > 0)
+    .sort((a, b) => b.tokens - a.tokens)
 
   return (
     <header
@@ -381,6 +409,95 @@ export function ChatHeader() {
           </Button>
         ) : null}
 
+        <Popover
+          align="end"
+          width="w-[340px]"
+          trigger={() => (
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-panel2 hover:text-ink"
+              title="Usage and cost"
+              aria-label="Usage and cost"
+            >
+              <BarChart3 className="h-4 w-4" />
+            </button>
+          )}
+        >
+          {() => (
+            <div className="p-1">
+              <div className="px-2 pb-1.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-faint">
+                Usage & cost
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg border border-line bg-panel2/50 px-2.5 py-2">
+                  <div className="text-[9.5px] text-faint">This chat</div>
+                  <div className="mt-0.5 text-[12px] font-semibold text-ink">
+                    {fmtTokens(usage?.total)} tokens
+                  </div>
+                  <div className="text-[10px] text-muted">
+                    {fmtCost(usage?.cost)}
+                    {context ? ` · ${context.percent}% ctx` : ''}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-line bg-panel2/50 px-2.5 py-2">
+                  <div className="text-[9.5px] text-faint">Project total</div>
+                  <div className="mt-0.5 text-[12px] font-semibold text-ink">
+                    {fmtTokens(projectTotals.tokens)} tokens
+                  </div>
+                  <div className="text-[10px] text-muted">{fmtCost(projectTotals.cost)}</div>
+                </div>
+              </div>
+
+              <div className="mt-2 px-2 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-faint">
+                By agent
+              </div>
+              <div className="mt-1 max-h-40 space-y-0.5 overflow-y-auto scroll-thin">
+                {agentTotals.length === 0 ? (
+                  <div className="px-2 py-2 text-[10.5px] text-faint">No usage yet.</div>
+                ) : (
+                  agentTotals.map(({ agent: entry, tokens, cost }) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-panel2"
+                    >
+                      <Avatar name={entry.name} size="xs" />
+                      <span className="min-w-0 flex-1 truncate text-[11px] text-ink">
+                        {entry.name}
+                      </span>
+                      <span className="shrink-0 text-[10px] tabular-nums text-muted">
+                        {fmtTokens(tokens)} · {fmtCost(cost)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="mt-2 px-2 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-faint">
+                By chat
+              </div>
+              <div className="mt-1 max-h-40 space-y-0.5 overflow-y-auto scroll-thin">
+                {chatTotals.length === 0 ? (
+                  <div className="px-2 py-2 text-[10.5px] text-faint">No usage yet.</div>
+                ) : (
+                  chatTotals.map(({ chat: entry, tokens, cost }) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-panel2"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-[11px] text-muted">
+                        {entry.title}
+                      </span>
+                      <span className="shrink-0 text-[10px] tabular-nums text-faint">
+                        {fmtTokens(tokens)} · {fmtCost(cost)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </Popover>
+
         <button
           type="button"
           onClick={openFilesPanel}
@@ -427,24 +544,6 @@ export function ChatHeader() {
         >
           {(close) => (
             <div>
-              {usage && context ? (
-                <div className="mb-1 rounded-md border border-line bg-panel2/50 px-2 py-1.5 text-[10px] tabular-nums text-muted">
-                  <div className="flex items-center justify-between gap-3">
-                    <span>Tokens</span>
-                    <span className="text-ink">{fmtTokens(usage.total)}</span>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-3">
-                    <span>Context</span>
-                    <span className={context.percent >= 80 ? 'font-medium text-warn' : 'text-ink'}>
-                      {context.percent}%
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-3">
-                    <span>Cost</span>
-                    <span className="text-ink">{fmtCost(usage.cost)}</span>
-                  </div>
-                </div>
-              ) : null}
               <MenuItem
                 icon={<Pencil className="h-3.5 w-3.5" />}
                 onClick={() => {

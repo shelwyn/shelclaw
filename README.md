@@ -428,6 +428,8 @@ npm run dev
 
 Open `http://localhost:8080`, create the first account, and it becomes the platform administrator. A self-hosted Activepieces does **not** require an Activepieces cloud account.
 
+If Activepieces asks you to connect an AI provider or LLM, **skip it**. Shelclaw owns the models and agents; Activepieces provides only connections, flows and MCP tools. Configure an Activepieces AI provider only if you separately want Activepieces' own chat/AI features.
+
 For the full app + Activepieces stack, use `./selfhost.sh`. Check status/logs with `./selfhost.sh status` and `./selfhost.sh logs`. If port 8080 is busy, set `ACTIVEPIECES_PORT=8081` before starting.
 
 When Shelclaw runs on the host, use `http://localhost:8080/mcp` as the MCP URL. When Shelclaw runs inside Docker, use `http://activepieces-app:80/mcp`. Enable the MCP server in Activepieces under **Settings → MCP Server** first.

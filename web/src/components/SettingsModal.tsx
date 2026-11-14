@@ -1820,9 +1820,13 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
             <HelpCircle className="h-3.5 w-3.5" />
           </button>
         </div>
-        Shelclaw stays the orchestrator. Build flows and connect services in the self-hosted
-        Activepieces UI, then connect its MCP endpoint here. Agents call Activepieces tools through
-        the existing encrypted MCP path.
+        Shelclaw stays the orchestrator and owns the LLM and agents. Build flows and connect
+        services in the self-hosted Activepieces UI, then connect its MCP endpoint here. Agents call
+        Activepieces tools through the existing encrypted MCP path.
+        <div className="mt-1 font-medium text-ink">
+          You do not need to connect an LLM to Activepieces for this integration. If Activepieces
+          asks for an AI provider, skip it unless you separately want Activepieces' own AI features.
+        </div>
       </div>
 
       <Field label="Activepieces UI / base URL" hint="Used for the Open Activepieces link.">
@@ -1985,6 +1989,16 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
               A self-hosted Activepieces does <strong className="text-ink">not</strong> require an
               Activepieces cloud account. The first account you create becomes the platform
               administrator. There is no default username or password.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-line bg-panel2/40 px-3 py-2">
+            <div className="font-semibold text-ink">Do not connect an LLM here</div>
+            <p className="mt-1">
+              If Activepieces asks you to connect an AI provider or LLM, skip it. Shelclaw owns the
+              models and agents; Activepieces is only the external-integration and automation layer.
+              Configure an AI provider in Activepieces only if you separately want to use
+              Activepieces' own AI/chat features.
             </p>
           </div>
 

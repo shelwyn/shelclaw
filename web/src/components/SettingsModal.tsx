@@ -1096,9 +1096,16 @@ function McpSettings() {
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState<McpFormState | null>(null)
   const [saving, setSaving] = useState(false)
+  const [savingTool, setSavingTool] = useState(false)
+  const [selectedTool, setSelectedTool] = useState('')
   const [toolsByServer, setToolsByServer] = useState<Record<string, string[]>>({})
   const editingServer = editing?.id ? servers.find((server) => server.id === editing.id) : undefined
   const editingTools = editingServer?.tools || []
+  const selectedToolInfo = editingTools.find((tool) => tool.name === selectedTool)
+
+  useEffect(() => {
+    setSelectedTool('')
+  }, [editing?.id])
 
   const load = async () => {
     setLoading(true)
@@ -1193,6 +1200,27 @@ function McpSettings() {
     const server = editingServer
     if (!server) return
     await runTest(server)
+  }
+
+  const saveToolInstruction = async () => {
+    if (!editing?.id || !selectedTool) return
+    setSavingTool(true)
+    try {
+      const next = {
+        ...(editingServer?.toolInstructions || {}),
+        [selectedTool]: editing.toolInstructions[selectedTool] || '',
+      }
+      await api.updateMcpServer(editing.id, { toolInstructions: next })
+      setEditing((current) =>
+        current ? { ...current, toolInstructions: next } : current,
+      )
+      await load()
+      toast('success', `Instruction saved for ${selectedTool}.`)
+    } catch (err) {
+      toast('error', errorText(err))
+    } finally {
+      setSavingTool(false)
+    }
   }
 
   const remove = async () => {
@@ -1541,41 +1569,83 @@ function McpSettings() {
 
               {editingTools.length ? (
                 <div className="mt-2.5 space-y-2">
-                  {editingTools.map((tool) => (
-                    <div key={tool.name} className="rounded-md border border-line bg-panel p-2">
-                      <div className="font-mono text-[11px] font-medium text-ink">{tool.name}</div>
-                      {tool.description ? (
-                        <div className="mt-0.5 text-[10px] leading-relaxed text-faint">
-                          {tool.description}
-                        </div>
-                      ) : null}
-                      <Textarea
-                        value={editing.toolInstructions[tool.name] || ''}
-                        onChange={(event) =>
-                          setEditing((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  toolInstructions: {
-                                    ...current.toolInstructions,
-                                    [tool.name]: event.target.value,
-                                  },
-                                }
-                              : current,
-                          )
-                        }
-                        rows={2}
-                        placeholder={`Use ${tool.name} when…`}
-                        className="mt-1.5 text-[11.5px]"
-                      />
+                  <Select
+                    value={selectedTool}
+                    onChange={(event) => setSelectedTool(event.target.value)}
+                  >
+                    <option value="">Select Tool</option>
+                    {editingTools.map((tool) => (
+                      <option key={tool.name} value={tool.name}>
+                        {tool.name}
+                      </option>
+                    ))}
+                  </Select>
+                  {selectedToolInfo?.description ? (
+                    <div className="text-[10px] leading-relaxed text-faint">
+                      {selectedToolInfo.description}
                     </div>
-                  ))}
+                  ) : null}
+                  <div className="flex items-start gap-2">
+                    <Textarea
+                      value={selectedTool ? editing.toolInstructions[selectedTool] || '' : ''}
+                      onChange={(event) => {
+                        if (!selectedTool) return
+                        const value = event.target.value
+                        setEditing((current) =>
+                          current
+                            ? {
+                                ...current,
+                                toolInstructions: {
+                                  ...current.toolInstructions,
+                                  [selectedTool]: value,
+                                },
+                              }
+                            : current,
+                        )
+                      }}
+                      disabled={!selectedTool}
+                      rows={3}
+                      placeholder={
+                        selectedTool
+                          ? `Use ${selectedTool} when…`
+                          : 'Select a tool first, then write its instruction.'
+                      }
+                      className="text-[11.5px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void saveToolInstruction()}
+                      disabled={!editing.id || !selectedTool || savingTool}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-panel2 text-ink transition-colors hover:border-line-strong disabled:opacity-40"
+                      title={
+                        selectedTool
+                          ? `Save instruction for ${selectedTool}`
+                          : 'Select a tool first'
+                      }
+                      aria-label={
+                        selectedTool
+                          ? `Save instruction for ${selectedTool}`
+                          : 'Save tool instruction'
+                      }
+                    >
+                      {savingTool ? (
+                        <Spinner className="h-3.5 w-3.5" />
+                      ) : (
+                        <Check className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <div className="mt-2 rounded-md border border-dashed border-line px-3 py-3 text-[10.5px] text-faint">
-                  {editing.id
-                    ? 'No tools discovered yet. Click Discover tools.'
-                    : 'Save this server first, then reopen it to discover tools.'}
+                <div className="mt-2 space-y-2">
+                  <Select disabled>
+                    <option>No Tools Found</option>
+                  </Select>
+                  <div className="rounded-md border border-dashed border-line px-3 py-3 text-[10.5px] text-faint">
+                    {editing.id
+                      ? 'No tools discovered yet. Click Discover tools.'
+                      : 'Save this server first, then reopen it to discover tools.'}
+                  </div>
                 </div>
               )}
             </div>

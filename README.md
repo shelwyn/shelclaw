@@ -198,10 +198,10 @@ Each MCP server also has an **Instructions for agents** field. That text is inje
 
 1. Connect/save the MCP server.
 2. Open it and click **Discover tools**. The discovered tool list is stored.
-3. For every tool, add an instruction such as:
+3. For every tool, select it from the **Select Tool** dropdown, write its instruction, and click the tick icon to save that instruction immediately. For example:
    - `send_email` — use this whenever the user asks to send or draft email; include recipients, subject and body.
    - `list_messages` — use this when the user asks to check, search or summarize email.
-4. Save. These instructions and the tool argument schemas are injected into the Orchestrator and every agent run.
+4. These instructions and the tool argument schemas are injected into the Orchestrator and every agent run.
 
 Per-tool instructions are guidance for the model only. They are never combined with or given access to credential values.
 

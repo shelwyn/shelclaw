@@ -18,7 +18,7 @@ import type {
 } from './types'
 
 export type ModalState =
-  | { type: 'settings'; tab?: 'providers' | 'workspace' | 'mcp' }
+  | { type: 'settings'; tab?: 'providers' | 'workspace' | 'mcp' | 'activepieces' }
   | { type: 'agent'; id?: string }
   | { type: 'project'; id?: string }
   | null

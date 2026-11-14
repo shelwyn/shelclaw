@@ -3,6 +3,7 @@ import {
   Copy,
   Cpu,
   Download,
+  ExternalLink,
   KeyRound,
   Pencil,
   Plug,
@@ -12,6 +13,7 @@ import {
   Settings2,
   Terminal,
   Trash2,
+  Workflow,
   Zap,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -1680,7 +1682,266 @@ function McpSettings() {
   )
 }
 
-export function SettingsModal({ initialTab }: { initialTab: 'providers' | 'workspace' | 'mcp' }) {
+function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
+  const toast = useAppStore((state) => state.toast)
+  const [servers, setServers] = useState<McpServer[]>([])
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [baseUrl, setBaseUrl] = useState('http://localhost:8080')
+  const [mcpUrl, setMcpUrl] = useState('http://localhost:8080/mcp')
+  const [headersText, setHeadersText] = useState('')
+  const [enabled, setEnabled] = useState(true)
+  const [tools, setTools] = useState<string[]>([])
+
+  const existing = servers.find((server) => server.name.toLowerCase() === 'activepieces')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const result = await api.mcpServers()
+      setServers(result.servers)
+      const active = result.servers.find(
+        (server) => server.name.toLowerCase() === 'activepieces',
+      )
+      if (active) {
+        setMcpUrl(active.url)
+        setBaseUrl(active.url.replace(/\/mcp\/?$/i, '') || 'http://localhost:8080')
+        setEnabled(active.enabled)
+        setTools(active.tools.map((tool) => tool.name))
+      }
+    } catch (err) {
+      toast('error', errorText(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+  }, [])
+
+  const save = async () => {
+    const headers = parseCredentialLines(headersText)
+    if (!headers) {
+      toast('error', 'Headers must use one Header: value pair per line.')
+      return
+    }
+    if (!/^https?:\/\//i.test(mcpUrl.trim())) {
+      toast('error', 'Enter a valid http:// or https:// MCP URL.')
+      return
+    }
+    setSaving(true)
+    try {
+      let server: McpServer
+      if (existing) {
+        server = await api.updateMcpServer(existing.id, {
+          url: mcpUrl.trim(),
+          enabled,
+          ...(headersText.trim() ? { headers } : {}),
+        })
+        toast('success', 'Activepieces connection updated.')
+      } else {
+        server = await api.createMcpServer({
+          name: 'Activepieces',
+          description:
+            'Self-hosted Activepieces engine. Use its MCP tools to run external app actions and workflows. Build flows and connect apps in the Activepieces UI.',
+          transport: 'http',
+          url: mcpUrl.trim(),
+          enabled,
+          headers,
+        })
+        toast('success', 'Activepieces connected through MCP.')
+      }
+      setServers((current) => {
+        const next = current.filter((entry) => entry.id !== server.id)
+        return [...next, server]
+      })
+      setHeadersText('')
+      await load()
+      await test(server.id)
+    } catch (err) {
+      toast('error', errorText(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const test = async (serverId?: string) => {
+    const id = serverId || existing?.id
+    if (!id) return
+    setTesting(true)
+    try {
+      const result = await api.testMcpServer(id)
+      setTools(result.tools.map((tool) => tool.name))
+      toast(
+        'success',
+        `Activepieces connected · ${result.tools.length} tool${
+          result.tools.length === 1 ? '' : 's'
+        }`,
+      )
+      await load()
+    } catch (err) {
+      toast('error', `Activepieces: ${errorText(err)}`)
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const disconnect = async () => {
+    if (!existing) return
+    setSaving(true)
+    try {
+      await api.deleteMcpServer(existing.id)
+      toast('success', 'Activepieces disconnected.')
+      await load()
+    } catch (err) {
+      toast('error', errorText(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-line bg-panel2/40 px-3 py-2.5 text-[10.5px] leading-relaxed text-muted">
+        <div className="flex items-center gap-1.5 font-medium text-ink">
+          <Workflow className="h-3.5 w-3.5" /> Activepieces engine
+        </div>
+        OpenCodex stays the orchestrator. Build flows and connect services in the self-hosted
+        Activepieces UI, then connect its MCP endpoint here. Agents call Activepieces tools through
+        the existing encrypted MCP path.
+      </div>
+
+      <Field label="Activepieces UI / base URL" hint="Used for the Open Activepieces link.">
+        <Input
+          value={baseUrl}
+          onChange={(event) => {
+            const value = event.target.value
+            setBaseUrl(value)
+            setMcpUrl(`${value.replace(/\/$/, '')}/mcp`)
+          }}
+          placeholder="http://localhost:8080"
+          className="font-mono text-[12px]"
+        />
+      </Field>
+
+      <Field
+        label="MCP endpoint URL"
+        hint="Must be reachable from the OpenCodex server. In Docker this is usually http://activepieces-app:80/mcp."
+      >
+        <Input
+          value={mcpUrl}
+          onChange={(event) => setMcpUrl(event.target.value)}
+          placeholder="http://localhost:8080/mcp"
+          className="font-mono text-[12px]"
+        />
+      </Field>
+
+      <Field
+        label="Headers / token"
+        hint="Optional. Leave blank to keep an existing token. Stored encrypted and never sent to a model."
+      >
+        <Textarea
+          value={headersText}
+          onChange={(event) => setHeadersText(event.target.value)}
+          rows={3}
+          placeholder="Authorization: Bearer your-token"
+          className="font-mono text-[11.5px]"
+        />
+      </Field>
+
+      <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => setEnabled(event.target.checked)}
+          className="h-3.5 w-3.5 accent-[var(--ink)]"
+        />
+        Enable Activepieces tools for agents
+      </label>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" size="sm" onClick={() => void save()} loading={saving}>
+          {existing ? 'Save connection' : 'Connect Activepieces'}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void test()}
+          loading={testing}
+          disabled={!existing}
+        >
+          <RefreshCw className="h-3.5 w-3.5" /> Test & discover tools
+        </Button>
+        <a
+          href={baseUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-7.5 items-center gap-1.5 rounded-md border border-line px-2.5 text-[12px] font-medium text-ink hover:border-line-strong"
+        >
+          <ExternalLink className="h-3.5 w-3.5" /> Open Activepieces
+        </a>
+        {existing ? (
+          <Button variant="ghost" size="sm" onClick={() => void disconnect()} disabled={saving}>
+            <Trash2 className="h-3.5 w-3.5" /> Disconnect
+          </Button>
+        ) : null}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <Spinner className="h-4 w-4 text-ink" />
+        </div>
+      ) : existing ? (
+        <div className="rounded-lg border border-line bg-panel px-3 py-2.5">
+          <div className="flex items-center gap-2 text-[11.5px] text-ink">
+            <span className={`h-1.5 w-1.5 rounded-full ${existing.enabled ? 'bg-ink' : 'bg-faint'}`} />
+            {existing.enabled ? 'Enabled' : 'Disabled'} · {existing.tools.length} tools discovered
+          </div>
+          {tools.length ? (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {tools.slice(0, 24).map((tool) => (
+                <span
+                  key={tool}
+                  className="rounded border border-line bg-panel2 px-1.5 py-0.5 font-mono text-[9.5px] text-muted"
+                >
+                  {tool}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1 text-[10.5px] text-faint">
+              Test the connection to discover tools, then add per-tool instructions in the MCP
+              Servers tab.
+            </div>
+          )}
+          <div className="mt-2 flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onOpenMcp}
+            >
+              <Plug className="h-3.5 w-3.5" /> Manage tool instructions
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-line px-5 py-7 text-center">
+          <Workflow className="mx-auto h-5 w-5 text-faint" />
+          <div className="mt-2 text-[12.5px] font-medium text-ink">Activepieces is not connected</div>
+          <p className="mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-muted">
+            Start the stack with <code className="font-mono">./selfhost.sh</code>, create the first
+            admin account in Activepieces, connect your apps, then paste its MCP endpoint and token
+            above.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function SettingsModal({ initialTab }: { initialTab: 'providers' | 'workspace' | 'mcp' | 'activepieces' }) {
   const closeModal = useAppStore((state) => state.closeModal)
   const [tab, setTab] = useState(initialTab)
   const [view, setView] = useState<'list' | 'form'>('list')
@@ -1705,6 +1966,7 @@ export function SettingsModal({ initialTab }: { initialTab: 'providers' | 'works
           [
             { id: 'providers', label: 'Harness', icon: Cpu },
             { id: 'mcp', label: 'MCP Servers', icon: Plug },
+            { id: 'activepieces', label: 'Activepieces', icon: Workflow },
             { id: 'workspace', label: 'Workspace', icon: Settings2 },
           ] as const
         ).map((entry) => {
@@ -1747,6 +2009,8 @@ export function SettingsModal({ initialTab }: { initialTab: 'providers' | 'works
         )
       ) : tab === 'mcp' ? (
         <McpSettings />
+      ) : tab === 'activepieces' ? (
+        <ActivepiecesSettings onOpenMcp={() => setTab('mcp')} />
       ) : (
         <WorkspaceSettings />
       )}

@@ -10,3 +10,6 @@ data/
 .DS_Store
 npm-debug.log*
 coverage/
+
+.selfhost/
+backups/

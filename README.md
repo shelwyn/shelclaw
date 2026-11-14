@@ -379,6 +379,38 @@ Project workspaces are chosen per project and required at creation. The database
 
 The database file itself is not encrypted, but secrets inside it are. Protect it like any credential store. Use the backup commands in the Docker section or copy the SQLite file (plus `-wal`/`-shm` while running, or stop the app first). Back up `secret.key` and custom workspace folders separately.
 
+## Self-hosted stack with Activepieces
+
+OpenCodex is designed to own agent orchestration while Activepieces owns external integrations and workflow automation. The integration architecture is documented in [docs/activepieces-integration-plan.md](docs/activepieces-integration-plan.md).
+
+Activepieces Community Edition core is MIT licensed and self-hostable. OpenCodex integrates its engine through APIs/MCP and links out to the Activepieces builder UI; it does not embed the enterprise builder or use Activepieces as the orchestration engine.
+
+**Settings → Activepieces** connects the self-hosted MCP endpoint through the existing encrypted MCP vault. Build flows and service connections in the Activepieces UI, then let agents call its tools via `mcp_call`. Flow syncing, per-flow instructions and approval policies are the next implementation phases in the plan.
+
+After pulling the repository:
+
+```bash
+./selfhost.sh              # first run generates .selfhost/*.env and starts everything
+./selfhost.sh status       # container status
+./selfhost.sh logs         # follow logs
+./selfhost.sh backup       # database + OpenCodex data + config backups
+./selfhost.sh down         # stop, keep volumes
+./selfhost.sh reset --yes  # remove containers and data volumes (destructive)
+```
+
+Services and exposed ports:
+
+| Service | Host port | Internal port | Purpose |
+| --- | --- | --- | --- |
+| OpenCodex | 8787 | 8787 | UI, API, orchestrator |
+| Activepieces app/API | 8080 | 80 | Flow builder, REST API, MCP endpoint |
+| Activepieces worker | — | — | Flow execution |
+| Activepieces PostgreSQL | — | 5432 | Flows, runs, connections, pgvector |
+| Activepieces Redis | — | 6379 | Queue/cache |
+| OpenCode server (host) | 4096 | host.docker.internal:4096 | Agent harness |
+
+Generated secrets live in `.selfhost/activepieces.env` and `.selfhost/opencodex.env` (gitignored). Back them up together with the Activepieces PostgreSQL volume and the `opencodex-data` volume.
+
 ## Deployment
 
 ### Docker (recommended)

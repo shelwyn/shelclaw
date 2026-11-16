@@ -762,7 +762,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
     const saved = input.serverId ? getMcpServerInternal(input.serverId) : undefined
     const normalizedUrl = (value: string | undefined) => (value || '').trim().replace(/\/+$/, '')
-    const sameTarget = Boolean(
+    const originOf = (value: string | undefined): string => {
+      try {
+        return new URL(value || '').origin
+      } catch {
+        return ''
+      }
+    }
+    const sameOriginTarget = Boolean(
+      saved &&
+        saved.transport === input.transport &&
+        (input.transport === 'http'
+          ? Boolean(originOf(input.url)) && originOf(saved.url) === originOf(input.url)
+          : saved.command === (input.command || '')),
+    )
+    const sameExactTarget = Boolean(
       saved &&
         saved.transport === input.transport &&
         (input.transport === 'http'
@@ -782,10 +796,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
       return next
     }
-    const env = mergeCredentials(input.env || {}, sameTarget ? saved?.env : undefined)
-    const headers = mergeCredentials(input.headers || {}, sameTarget ? saved?.headers : undefined)
+    const env = mergeCredentials(input.env || {}, sameOriginTarget ? saved?.env : undefined)
+    const headers = mergeCredentials(
+      input.headers || {},
+      sameOriginTarget ? saved?.headers : undefined,
+    )
     const draft: McpServerInternal = {
-      id: sameTarget && saved ? saved.id : 'draft',
+      id: sameExactTarget && saved ? saved.id : 'draft',
       name: input.name?.trim() || 'MCP draft',
       description: '',
       transport: input.transport,
@@ -797,7 +814,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       envKeys: Object.keys(env).sort(),
       hasHeaders: Object.keys(headers).length > 0,
       headerKeys: Object.keys(headers).sort(),
-      hasOAuth: Boolean(sameTarget && saved?.hasOAuth),
+      hasOAuth: Boolean(sameExactTarget && saved?.hasOAuth),
       tools: [],
       toolInstructions: {},
       createdAt: now(),

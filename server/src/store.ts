@@ -581,6 +581,14 @@ export function createMcpServer(input: {
   return getMcpServer(serverId)!
 }
 
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin
+  } catch {
+    return a === b
+  }
+}
+
 export function updateMcpServer(
   serverId: string,
   input: {
@@ -615,6 +623,20 @@ export function updateMcpServer(
     now(),
     serverId,
   )
+  const nextTransport = input.transport ?? existing.transport
+  const nextUrl = input.url ?? existing.url
+  const nextCommand = input.command ?? existing.command
+  const nextArgs = input.args ?? existing.args
+  const targetMoved =
+    nextTransport !== existing.transport ||
+    (nextTransport === 'http'
+      ? !sameOrigin(nextUrl, existing.url)
+      : nextCommand !== existing.command ||
+        JSON.stringify(nextArgs) !== JSON.stringify(existing.args))
+  if (targetMoved) {
+    deleteIntegrationSecret('mcp_server', serverId, 'env')
+    deleteIntegrationSecret('mcp_server', serverId, 'headers')
+  }
   saveMcpSecrets(
     serverId,
     input.env,

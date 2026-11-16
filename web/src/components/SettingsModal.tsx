@@ -20,7 +20,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useAppStore } from '../store'
-import type { McpServer, Provider, ProviderKind } from '../types'
+import type { McpServer, McpTool, Provider, ProviderKind } from '../types'
 import { providerKindLabel, isHarnessKind } from '../lib/format'
 import {
   Badge,
@@ -1208,7 +1208,8 @@ function McpSettings() {
   const [deleteTarget, setDeleteTarget] = useState<McpServer | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState<McpFormState | null>(null)
-  const [draftTools, setDraftTools] = useState<string[]>([])
+  const [draftTools, setDraftTools] = useState<McpTool[]>([])
+  const [draftChecked, setDraftChecked] = useState(false)
   const [draftError, setDraftError] = useState('')
   const [draftTesting, setDraftTesting] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1216,7 +1217,7 @@ function McpSettings() {
   const [selectedTool, setSelectedTool] = useState('')
   const [toolsByServer, setToolsByServer] = useState<Record<string, string[]>>({})
   const editingServer = editing?.id ? servers.find((server) => server.id === editing.id) : undefined
-  const editingTools = editingServer?.tools || []
+  const editingTools = draftChecked ? draftTools : editingServer?.tools || []
   const selectedToolInfo = editingTools.find((tool) => tool.name === selectedTool)
 
   useEffect(() => {
@@ -1241,6 +1242,7 @@ function McpSettings() {
 
   const startEditing = (form: McpFormState) => {
     setDraftTools([])
+    setDraftChecked(false)
     setDraftError('')
     setEditing(form)
   }
@@ -1283,13 +1285,15 @@ function McpSettings() {
     setDraftError('')
     try {
       const result = await api.testMcpDraft(payload)
-      setDraftTools(result.tools.map((tool) => tool.name))
+      setDraftTools(result.tools)
+      setDraftChecked(true)
       toast(
         'success',
         `${result.tools.length} tool${result.tools.length === 1 ? '' : 's'} found.`,
       )
     } catch (err) {
       setDraftTools([])
+      setDraftChecked(true)
       setDraftError(errorText(err))
       toast('error', errorText(err))
     } finally {
@@ -1400,9 +1404,7 @@ function McpSettings() {
   )
 
   const discoverEditingTools = async () => {
-    const server = editingServer
-    if (!server) return
-    await runTest(server)
+    await connectDraft()
   }
 
   const saveToolInstruction = async () => {
@@ -1410,7 +1412,7 @@ function McpSettings() {
     setSavingTool(true)
     try {
       const next = {
-        ...(editingServer?.toolInstructions || {}),
+        ...editing.toolInstructions,
         [selectedTool]: editing.toolInstructions[selectedTool] || '',
       }
       await api.updateMcpServer(editing.id, { toolInstructions: next })
@@ -1704,7 +1706,10 @@ function McpSettings() {
                 </Field>
               </>
             ) : (
-              <Field label="URL" hint="HTTP endpoint exposed by the MCP server.">
+              <Field
+                label="URL"
+                hint="Use the exact endpoint from the MCP provider. Many servers end in /mcp; a base URL can return 404."
+              >
                 <Input
                   value={editing.url}
                   onChange={(event) =>
@@ -1787,10 +1792,10 @@ function McpSettings() {
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {draftTools.slice(0, 60).map((tool) => (
                     <span
-                      key={tool}
+                      key={tool.name}
                       className="rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[9.5px] text-muted"
                     >
-                      {tool}
+                      {tool.name}
                     </span>
                   ))}
                   {draftTools.length > 60 ? (
@@ -1805,19 +1810,19 @@ function McpSettings() {
                 <div>
                   <div className="text-[11.5px] font-medium text-ink">Tool instructions</div>
                   <p className="mt-0.5 text-[10px] leading-relaxed text-faint">
-                    Discover the tools first, then tell the Orchestrator and agents what each tool
-                    should be used for.
+                    Use <strong className="text-muted">Connect &amp; list tools</strong> to load the
+                    current tools, then tell the Orchestrator and agents what each tool is for.
                   </p>
                 </div>
                 <Button
                   variant="secondary"
                   size="icon"
                   onClick={() => void discoverEditingTools()}
-                  disabled={!editing.id || Boolean(testing)}
-                  loading={Boolean(testing) && testing === editing.id}
-                  title="Discover tools"
+                  disabled={draftTesting}
+                  loading={draftTesting}
+                  title="Connect and list tools"
                 >
-                  <RefreshCw className={cn('h-3.5 w-3.5', testing === editing.id && 'hidden')} />
+                  <RefreshCw className={cn('h-3.5 w-3.5', draftTesting && 'hidden')} />
                 </Button>
               </div>
 
@@ -1893,12 +1898,11 @@ function McpSettings() {
               ) : (
                 <div className="mt-2 space-y-2">
                   <Select disabled>
-                    <option>No Tools Found</option>
+                    <option>No tools loaded</option>
                   </Select>
                   <div className="rounded-md border border-dashed border-line px-3 py-3 text-[10.5px] text-faint">
-                    {editing.id
-                      ? 'No tools discovered yet. Click Discover tools.'
-                      : 'Save this server first, then reopen it to discover tools.'}
+                    No tools loaded yet. Click <strong className="text-muted">Connect &amp; list tools</strong>{' '}
+                    to test the current URL and credentials.
                   </div>
                 </div>
               )}

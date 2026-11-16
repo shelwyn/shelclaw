@@ -71,6 +71,8 @@ function mapProvider(r: Row): Provider {
     defaultModel: s(r.default_model),
     models: parseJson<string[]>(r.models, []),
     config: decryptProviderConfig(s(r.config)),
+    lastConnectedAt: n(r.last_connected_at),
+    lastConnectionError: s(r.last_connection_error),
     createdAt: n(r.created_at),
     updatedAt: n(r.updated_at),
   }
@@ -265,8 +267,15 @@ export function updateProvider(providerId: string, input: Partial<Provider>): Pr
     config: input.config ?? existing.config,
     updatedAt: now(),
   }
+  const connectionChanged =
+    (input.kind !== undefined && input.kind !== existing.kind) ||
+    (input.baseUrl !== undefined && (input.baseUrl || '') !== existing.baseUrl) ||
+    (input.apiKey !== undefined && (input.apiKey || '') !== existing.apiKey) ||
+    (input.apiVersion !== undefined && (input.apiVersion || '') !== existing.apiVersion) ||
+    (input.config !== undefined &&
+      JSON.stringify(input.config || {}) !== JSON.stringify(existing.config))
   db.prepare(
-    `UPDATE providers SET name=?, kind=?, base_url=?, api_key=?, api_version=?, default_model=?, models=?, config=?, updated_at=? WHERE id=?`,
+    `UPDATE providers SET name=?, kind=?, base_url=?, api_key=?, api_version=?, default_model=?, models=?, config=?, last_connected_at=?, last_connection_error=?, updated_at=? WHERE id=?`,
   ).run(
     merged.name,
     merged.kind,
@@ -276,10 +285,22 @@ export function updateProvider(providerId: string, input: Partial<Provider>): Pr
     merged.defaultModel,
     JSON.stringify(merged.models),
     encryptJson(merged.config),
+    connectionChanged ? 0 : existing.lastConnectedAt,
+    connectionChanged ? '' : existing.lastConnectionError,
     merged.updatedAt,
     providerId,
   )
   return getProvider(providerId)
+}
+
+export function setProviderConnection(
+  providerId: string,
+  connected: boolean,
+  error = '',
+): void {
+  db.prepare(
+    'UPDATE providers SET last_connected_at = ?, last_connection_error = ? WHERE id = ?',
+  ).run(connected ? now() : 0, connected ? '' : error.slice(0, 2000), providerId)
 }
 
 export function deleteProvider(providerId: string): boolean {

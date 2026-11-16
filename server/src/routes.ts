@@ -10,6 +10,7 @@ import { db } from './db.js'
 import { AppError } from './errors.js'
 import { orchestrator } from './orchestrator/engine.js'
 import { listMcpTools, sanitizeMcpError } from './mcp.js'
+import { refreshProviderConnection } from './harness-health.js'
 import {
   completeMcpOAuth,
   disconnectMcpOAuth,
@@ -67,6 +68,7 @@ import {
   safeProvider,
   setChatArchived,
   setMcpTools,
+  setProviderConnection,
   syncRuntimeArtifacts,
   clearQueuedMessages,
   updateAgent,
@@ -222,6 +224,8 @@ function draftProvider(input: z.infer<typeof providerInput>): Provider {
     defaultModel: input.defaultModel ?? existing?.defaultModel ?? '',
     models: input.models ?? existing?.models ?? [],
     config: input.config ?? existing?.config ?? {},
+    lastConnectedAt: existing?.lastConnectedAt || 0,
+    lastConnectionError: existing?.lastConnectionError || '',
     createdAt: existing?.createdAt || t,
     updatedAt: t,
   }
@@ -289,7 +293,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/providers', async (req) => {
     const input = normalizeOpenCodeServerUrl(parse(providerInput, req.body))
     if (!input.name) throw new AppError('name is required', 400)
-    return safeProvider(createProvider({ ...input, name: input.name, kind: input.kind as ProviderKind }))
+    const created = createProvider({ ...input, name: input.name, kind: input.kind as ProviderKind })
+    void refreshProviderConnection(created)
+    return safeProvider(created)
   })
 
   app.patch('/api/providers/:id', async (req) => {
@@ -297,6 +303,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const input = normalizeOpenCodeServerUrl(parse(providerInput, req.body))
     const updated = updateProvider(id, input)
     if (!updated) throw new AppError('Provider not found.', 404)
+    void refreshProviderConnection(updated)
     return safeProvider(updated)
   })
 
@@ -315,9 +322,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     try {
       const models = await discoverModels(provider)
       if (models.length) updateProvider(id, { models })
+      setProviderConnection(id, true)
+      bus.emit('providers.changed', {})
       return { models, count: models.length }
     } catch (err) {
-      throw new AppError(err instanceof Error ? err.message : 'Could not fetch models.', 400)
+      const message = err instanceof Error ? err.message : 'Could not fetch models.'
+      setProviderConnection(id, false, message)
+      bus.emit('providers.changed', {})
+      throw new AppError(message, 400)
     }
   })
 
@@ -349,9 +361,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!provider) throw new AppError('Provider not found.', 404)
     try {
       const message = await testProvider(provider)
+      setProviderConnection(id, true)
+      bus.emit('providers.changed', {})
       return { ok: true, message }
     } catch (err) {
-      throw new AppError(err instanceof Error ? err.message : 'Connection failed.', 400)
+      const message = err instanceof Error ? err.message : 'Connection failed.'
+      setProviderConnection(id, false, message)
+      bus.emit('providers.changed', {})
+      throw new AppError(message, 400)
     }
   })
 

@@ -228,6 +228,12 @@ For HTTP servers, credential headers can be entered as HTTP headers. Environment
 
 Direct model APIs (OpenAI, Azure OpenAI, Anthropic, Ollama, LM Studio, etc.) are intentionally **not** supported. Shelclaw only orchestrates OpenCode.
 
+**Connection status:** configured harnesses are tested automatically when the app starts. A harness is shown as **connected** only after its test succeeds, and model pickers only list models from connected harnesses. If a harness is unreachable, its models are hidden until you test it again.
+
+**Default model:** each harness has a **Default model** field. Fetch models, then pick a model from the list (or type a `provider/model` id). New chats and agents that inherit the workspace default use this model unless a chat or agent overrides it.
+
+On a host install, if no harness exists, Shelclaw looks for the local `opencode` CLI and creates a default **OpenCode CLI** harness automatically. In Docker, connect your host OpenCode server as described below.
+
 ### Connecting to an OpenCode server
 
 OpenCode v2 exposes an HTTP API. This integration talks to it server-side; it requires a v2 build (`opencode serve`, tested with v2.1.4).

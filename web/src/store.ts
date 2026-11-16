@@ -402,6 +402,10 @@ function handleEvent(event: BusEvent): void {
       void state.refresh()
       break
 
+    case 'providers.changed':
+      void state.refresh()
+      break
+
     case 'agents.changed':
       scheduleRefresh(200)
       break

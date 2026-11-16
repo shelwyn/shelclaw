@@ -37,6 +37,8 @@ export interface Provider {
   models: string[]
   config: Record<string, unknown>
   hasKey: boolean
+  lastConnectedAt: number
+  lastConnectionError: string
   createdAt: number
   updatedAt: number
 }

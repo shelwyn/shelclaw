@@ -25,7 +25,7 @@ export function AgentModal({ agentId }: { agentId?: string }) {
   const agents = useAppStore((state) => state.agents)
   const projects = useAppStore((state) => state.projects)
   const activeProjectId = useAppStore((state) => state.activeProjectId)
-  const providers = useAppStore((state) => state.providers).filter((provider) =>
+  const allProviders = useAppStore((state) => state.providers).filter((provider) =>
     isHarnessKind(provider.kind),
   )
   const settings = useAppStore((state) => state.settings)
@@ -34,6 +34,9 @@ export function AgentModal({ agentId }: { agentId?: string }) {
   const toast = useAppStore((state) => state.toast)
 
   const existing = agentId ? agents.find((agent) => agent.id === agentId) : undefined
+  const providers = allProviders.filter(
+    (provider) => provider.lastConnectedAt > 0 || provider.id === existing?.providerId,
+  )
   const projectId = existing?.projectId || activeProjectId
   const project = projects.find((entry) => entry.id === projectId)
   const [form, setForm] = useState({
@@ -53,7 +56,10 @@ export function AgentModal({ agentId }: { agentId?: string }) {
 
   const provider = providers.find((entry) => entry.id === form.providerId)
   const modelOptions = useMemo(
-    () => [...new Set([provider?.defaultModel, ...(provider?.models || [])].filter(Boolean))] as string[],
+    () =>
+      provider && provider.lastConnectedAt > 0
+        ? ([...new Set([provider.defaultModel, ...(provider.models || [])].filter(Boolean))] as string[])
+        : [],
     [provider],
   )
 
@@ -197,6 +203,7 @@ export function AgentModal({ agentId }: { agentId?: string }) {
               {providers.map((entry) => (
                 <option key={entry.id} value={entry.id}>
                   {entry.name}
+                  {entry.lastConnectedAt > 0 ? '' : ' (not connected)'}
                 </option>
               ))}
             </Select>

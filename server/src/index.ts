@@ -8,6 +8,7 @@ import { ensureSecretKey } from './crypto.js'
 import { closeDb, db } from './db.js'
 import { AppError } from './errors.js'
 import { registerRoutes } from './routes.js'
+import { autoConnectHarnesses } from './harness-health.js'
 import { orchestrator } from './orchestrator/engine.js'
 import {
   ensureProjectOrchestrators,
@@ -123,6 +124,8 @@ try {
   if (!config.appToken) console.log('  Auth       →  open (set APP_TOKEN to lock down remote access)')
   // Resume messages that were queued before the previous process stopped.
   for (const chatId of listQueuedChatIds()) orchestrator.drainQueue(chatId)
+  // Mark reachable harnesses and refresh their model lists in the background.
+  void autoConnectHarnesses()
 } catch (err) {
   app.log.error(err)
   process.exit(1)

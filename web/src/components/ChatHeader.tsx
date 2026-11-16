@@ -93,7 +93,10 @@ function isHarnessProvider(provider?: Provider): boolean {
 function ModelPicker({ chat }: { chat: Chat }) {
   const allProviders = useAppStore((state) => state.providers)
   const providers = useMemo(
-    () => allProviders.filter((provider) => isHarnessKind(provider.kind)),
+    () =>
+      allProviders.filter(
+        (provider) => isHarnessKind(provider.kind) && provider.lastConnectedAt > 0,
+      ),
     [allProviders],
   )
   const agents = useAppStore((state) => state.agents)
@@ -113,7 +116,7 @@ function ModelPicker({ chat }: { chat: Chat }) {
   const label =
     chat.model ||
     (isHarness
-      ? 'Harness default'
+      ? providerSelection?.defaultModel || 'Harness default'
       : providerSelection?.defaultModel || providerSelection?.models[0] || 'Select model')
 
   const groups = useMemo(() => {
@@ -177,12 +180,18 @@ function ModelPicker({ chat }: { chat: Chat }) {
                 )}
               >
                 <Wand2 className="h-3 w-3 shrink-0 text-accent" />
-                <span className="flex-1">Use harness default</span>
+                <span className="flex-1">
+                  {providerSelection.defaultModel
+                    ? `Use default · ${modelShort(providerSelection.defaultModel)}`
+                    : 'Use harness default'}
+                </span>
                 {!chat.model ? <Check className="h-3 w-3 text-accent" /> : null}
               </button>
             ) : null}
             {groups.length === 0 ? (
-              <div className="px-2 py-4 text-center text-[11.5px] text-faint">No harnesses connected.</div>
+              <div className="px-2 py-4 text-center text-[11.5px] text-faint">
+                No connected harness. Connect one below.
+              </div>
             ) : (
               groups.map(({ provider, models }) => (
                 <div key={provider.id} className="mb-1">
@@ -194,7 +203,7 @@ function ModelPicker({ chat }: { chat: Chat }) {
                   </div>
                   {models.length === 0 ? (
                     <div className="px-2 pb-1.5 text-[10.5px] text-faint">
-                      No models listed. Add one in provider settings.
+                      No models discovered. Test this harness in Settings → Harness.
                     </div>
                   ) : (
                     models.map((model) => {

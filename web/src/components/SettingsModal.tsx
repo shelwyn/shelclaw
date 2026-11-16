@@ -340,6 +340,22 @@ function ProviderFormView({
     return payload
   }
 
+  const harnessModelOptions = useMemo(
+    () =>
+      [
+        ...new Set(
+          [
+            ...form.modelsText.split(/[\n,]/).map((model) => model.trim()),
+            ...(savedProvider?.models || []),
+            form.defaultModel,
+          ]
+            .map((model) => model.trim())
+            .filter(Boolean),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
+    [form.modelsText, savedProvider?.models, form.defaultModel],
+  )
+
   const applyModels = (models: string[], count: number) => {
     setForm((current) => ({
       ...current,
@@ -526,9 +542,10 @@ function ProviderFormView({
             </Field>
             <Field
               label="Default model"
-              hint="Format: providerID/modelID. Leave blank to use the harness default."
+              hint="Pick from the discovered models or type a provider/model id. Leave blank to use the harness default."
             >
               <Input
+                list="harness-default-models"
                 value={form.defaultModel}
                 onChange={(event) => update('defaultModel', event.target.value)}
                 placeholder="opencode-go/deepseek-v4.1-flash"
@@ -582,8 +599,9 @@ function ProviderFormView({
             />
           </Field>
 
-          <Field label="Default model" hint="Optional. Empty uses the harness default.">
+          <Field label="Default model" hint="Pick from discovered models or type a provider/model id. Empty uses the harness default.">
             <Input
+              list="harness-default-models"
               value={form.defaultModel}
               onChange={(event) => update('defaultModel', event.target.value)}
               placeholder="provider/model"
@@ -592,6 +610,12 @@ function ProviderFormView({
           </Field>
         </>
       )}
+
+      <datalist id="harness-default-models">
+        {harnessModelOptions.map((model) => (
+          <option key={model} value={model} />
+        ))}
+      </datalist>
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel2/40 px-3 py-2">
         <Button
@@ -725,6 +749,7 @@ function ProviderList({ onAdd, onEdit }: { onAdd: () => void; onEdit: (provider:
       if (action === 'test') {
         const result = await api.testProvider(provider.id)
         toast('success', `${provider.name}: ${result.message}`)
+        await refresh()
       } else {
         const result = await api.fetchModels(provider.id)
         toast('success', `${provider.name}: found ${result.count} model${result.count === 1 ? '' : 's'}.`)
@@ -784,6 +809,21 @@ function ProviderList({ onAdd, onEdit }: { onAdd: () => void; onEdit: (provider:
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-[12.5px] font-semibold text-ink">{provider.name}</span>
                   <Badge>{providerKindLabel(provider.kind)}</Badge>
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 text-[9.5px]',
+                      provider.lastConnectedAt > 0 ? 'text-success' : 'text-danger',
+                    )}
+                    title={provider.lastConnectionError || undefined}
+                  >
+                    <span
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        provider.lastConnectedAt > 0 ? 'bg-success' : 'bg-danger',
+                      )}
+                    />
+                    {provider.lastConnectedAt > 0 ? 'connected' : 'not connected'}
+                  </span>
                   {provider.hasKey ? (
                     <span className="inline-flex items-center gap-1 text-[9.5px] text-success">
                       <KeyRound className="h-2.5 w-2.5" /> password set
@@ -804,8 +844,14 @@ function ProviderList({ onAdd, onEdit }: { onAdd: () => void; onEdit: (provider:
                         .join(' ') || 'local CLI'}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[9.5px] text-faint">
-                  <span>{provider.models.length} models</span>
-                  {provider.defaultModel ? <span>default: {provider.defaultModel}</span> : null}
+                  {provider.lastConnectedAt > 0 ? (
+                    <>
+                      <span>{provider.models.length} models</span>
+                      {provider.defaultModel ? <span>default: {provider.defaultModel}</span> : null}
+                    </>
+                  ) : (
+                    <span className="text-danger">models hidden until the harness connects</span>
+                  )}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-0.5">
@@ -870,8 +916,11 @@ function ProviderList({ onAdd, onEdit }: { onAdd: () => void; onEdit: (provider:
 
 function WorkspaceSettings() {
   const settings = useAppStore((state) => state.settings)
-  const providers = useAppStore((state) => state.providers).filter((provider) =>
+  const allProviders = useAppStore((state) => state.providers).filter((provider) =>
     isHarnessKind(provider.kind),
+  )
+  const providers = allProviders.filter(
+    (provider) => provider.lastConnectedAt > 0 || provider.id === settings.defaultProviderId,
   )
   const refresh = useAppStore((state) => state.refresh)
   const toast = useAppStore((state) => state.toast)
@@ -888,9 +937,13 @@ function WorkspaceSettings() {
   const [saving, setSaving] = useState(false)
 
   const provider = providers.find((entry) => entry.id === form.defaultProviderId)
+  const providerConnected = Boolean(provider && provider.lastConnectedAt > 0)
   const modelOptions = useMemo(
-    () => [...new Set([provider?.defaultModel, ...(provider?.models || [])].filter(Boolean))] as string[],
-    [provider],
+    () =>
+      providerConnected
+        ? ([...new Set([provider?.defaultModel, ...(provider?.models || [])].filter(Boolean))] as string[])
+        : [],
+    [provider, providerConnected],
   )
 
   const save = async () => {
@@ -937,6 +990,7 @@ function WorkspaceSettings() {
             {providers.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.name}
+                {entry.lastConnectedAt > 0 ? '' : ' (not connected)'}
               </option>
             ))}
           </Select>
@@ -944,7 +998,11 @@ function WorkspaceSettings() {
             list="workspace-model-options"
             value={form.defaultModel}
             onChange={(event) => setForm((current) => ({ ...current, defaultModel: event.target.value }))}
-            placeholder={provider?.defaultModel || 'model id'}
+            placeholder={
+              providerConnected
+                ? provider?.defaultModel || 'model id'
+                : 'Connect the harness first'
+            }
             className="font-mono text-[12px]"
           />
           <datalist id="workspace-model-options">
@@ -952,6 +1010,11 @@ function WorkspaceSettings() {
               <option key={model} value={model} />
             ))}
           </datalist>
+          {form.defaultProviderId && !providerConnected ? (
+            <p className="text-[10.5px] leading-relaxed text-danger sm:col-span-2">
+              This harness is not connected. Test it in the Harness tab before choosing a model.
+            </p>
+          ) : null}
         </div>
       </div>
 

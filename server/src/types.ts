@@ -31,6 +31,8 @@ export interface Provider {
   defaultModel: string
   models: string[]
   config: Record<string, unknown>
+  lastConnectedAt: number
+  lastConnectionError: string
   createdAt: number
   updatedAt: number
 }

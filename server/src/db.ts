@@ -260,6 +260,12 @@ if (!hasColumn('mcp_servers', 'tools_json')) {
 if (!hasColumn('mcp_servers', 'tool_instructions')) {
   db.exec("ALTER TABLE mcp_servers ADD COLUMN tool_instructions TEXT NOT NULL DEFAULT '{}'")
 }
+if (!hasColumn('providers', 'last_connected_at')) {
+  db.exec('ALTER TABLE providers ADD COLUMN last_connected_at INTEGER NOT NULL DEFAULT 0')
+}
+if (!hasColumn('providers', 'last_connection_error')) {
+  db.exec("ALTER TABLE providers ADD COLUMN last_connection_error TEXT NOT NULL DEFAULT ''")
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_chats_archived ON chats(archived_at)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id, created_at)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_chats_project ON chats(project_id, last_message_at DESC)')

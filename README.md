@@ -188,7 +188,9 @@ Memory lives in the **right-hand inspector**. Open it with the brain icon next t
 Add MCP servers in **Settings → MCP Servers**. Both transports are supported:
 
 - **stdio** — command and arguments, with encrypted environment variables
-- **HTTP / SSE** — endpoint URL, with encrypted request headers or an OAuth 2.0 + PKCE browser flow
+- **HTTP / SSE** — endpoint URL, with encrypted authentication headers or an OAuth 2.0 + PKCE browser flow
+
+Credentials are entered as key/value rows. Use the **+ Add header** / **+ Add environment variable** button for extra values; blank values keep an existing stored secret, and removing a row deletes it. **Connect & list tools** tests the current unsaved values and lists discovered tools before you save.
 
 Use **Test connection** to initialize the server and list its tools. HTTP servers that return `401` can be connected with the key button (**Authorize with OAuth**) in the server list or the Activepieces tab. Shelclaw registers itself with the server, opens the consent page, and stores access/refresh tokens encrypted; tokens are refreshed automatically and never returned by the API or sent to a model. Enabled servers expose their tools to agents as `mcp_call`; the model sees only server names, tool names, descriptions and input schemas.
 
@@ -561,7 +563,7 @@ All endpoints are under `/api`; JSON in/out, SSE at `/api/events`.
 - `GET /api/projects/:id/artifacts` — uploads plus agent-created workspace files
 - `DELETE /api/queue/:id` removes a queued message; `POST /api/chats/:id/messages` returns `{queued: true}` when the chat is busy
 - `POST /api/chats/:id/cancel`, `POST /api/runs/:id/cancel`
-- `GET/POST /api/mcp`, `PATCH/DELETE /api/mcp/:id`, `POST /api/mcp/:id/test` — credentials are encrypted and never returned
+- `GET/POST /api/mcp`, `PATCH/DELETE /api/mcp/:id`, `POST /api/mcp/:id/test`, `POST /api/mcp/test-draft` — credentials are encrypted and never returned
 - `POST /api/mcp/oauth/start/:id`, `GET /api/mcp/oauth/authorize`, `GET /api/mcp/oauth/callback`, `POST /api/mcp/:id/oauth/disconnect` — OAuth 2.0 with PKCE for MCP servers
 - `PATCH /api/settings`
 

@@ -76,7 +76,7 @@ import {
   updateProvider,
   updateSettings,
 } from './store.js'
-import type { Provider, ProviderKind } from './types.js'
+import type { McpServerInternal, Provider, ProviderKind } from './types.js'
 import { now } from './util.js'
 const providerKind = z.enum(['opencode-server', 'opencode'])
 
@@ -106,8 +106,21 @@ const mcpInput = z.object({
   enabled: z.boolean().optional(),
   env: mcpCredentialMap,
   headers: mcpCredentialMap,
+  envKeys: z.array(z.string().min(1).max(200)).max(100).optional(),
+  headerKeys: z.array(z.string().min(1).max(200)).max(100).optional(),
   toolInstructions: z.record(z.string().min(1).max(200), z.string().max(4000)).optional(),
   clearCredentials: z.boolean().optional(),
+})
+
+const mcpDraftInput = z.object({
+  serverId: z.string().max(100).optional(),
+  name: z.string().max(80).optional(),
+  transport: z.enum(['stdio', 'http']),
+  command: z.string().max(1000).optional(),
+  args: z.array(z.string().max(1000)).max(100).optional(),
+  url: z.string().max(2000).optional(),
+  env: mcpCredentialMap,
+  headers: mcpCredentialMap,
 })
 
 const projectInput = z.object({  name: z.string().min(1).max(120).optional(),
@@ -737,6 +750,74 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string }
     if (!deleteMcpServer(id)) throw new AppError('MCP server not found.', 404)
     return { ok: true }
+  })
+
+  app.post('/api/mcp/test-draft', async (req) => {
+    const input = parse(mcpDraftInput, req.body)
+    if (input.transport === 'stdio' && !input.command?.trim()) {
+      throw new AppError('A command is required for a stdio MCP server.', 400)
+    }
+    if (input.transport === 'http' && !/^https?:\/\//i.test(input.url?.trim() || '')) {
+      throw new AppError('Enter a valid http:// or https:// MCP URL.', 400)
+    }
+    const saved = input.serverId ? getMcpServerInternal(input.serverId) : undefined
+    const normalizedUrl = (value: string | undefined) => (value || '').trim().replace(/\/+$/, '')
+    const sameTarget = Boolean(
+      saved &&
+        saved.transport === input.transport &&
+        (input.transport === 'http'
+          ? normalizedUrl(saved.url) === normalizedUrl(input.url)
+          : saved.command === (input.command || '') &&
+            JSON.stringify(saved.args) === JSON.stringify(input.args || [])),
+    )
+    const mergeCredentials = (
+      incoming: Record<string, string>,
+      stored: Record<string, string> | undefined,
+    ): Record<string, string> => {
+      const next: Record<string, string> = {}
+      for (const [key, value] of Object.entries(incoming)) {
+        const trimmed = key.trim()
+        if (!trimmed) continue
+        next[trimmed] = value !== '' ? value : stored?.[trimmed] ?? ''
+      }
+      return next
+    }
+    const env = mergeCredentials(input.env || {}, sameTarget ? saved?.env : undefined)
+    const headers = mergeCredentials(input.headers || {}, sameTarget ? saved?.headers : undefined)
+    const draft: McpServerInternal = {
+      id: sameTarget && saved ? saved.id : 'draft',
+      name: input.name?.trim() || 'MCP draft',
+      description: '',
+      transport: input.transport,
+      command: input.command || '',
+      args: input.args || [],
+      url: input.url || '',
+      enabled: true,
+      hasEnv: Object.keys(env).length > 0,
+      envKeys: Object.keys(env).sort(),
+      hasHeaders: Object.keys(headers).length > 0,
+      headerKeys: Object.keys(headers).sort(),
+      hasOAuth: Boolean(sameTarget && saved?.hasOAuth),
+      tools: [],
+      toolInstructions: {},
+      createdAt: now(),
+      updatedAt: now(),
+      env,
+      headers,
+    }
+    try {
+      const tools = await listMcpTools(draft)
+      return {
+        ok: true,
+        tools: tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description || '',
+          inputSchema: tool.inputSchema,
+        })),
+      }
+    } catch (err) {
+      throw new AppError(sanitizeMcpError(draft, err), 400)
+    }
   })
 
   app.post('/api/mcp/oauth/start/:id', async (req) => {

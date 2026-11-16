@@ -266,7 +266,7 @@ async function withHttpServer<T>(
       throw new OAuthRequiredError(
         activepieces
           ? `Activepieces requires authorization.${usefulDetail ? ` ${usefulDetail}` : ''} Click “Authorize with Activepieces” and approve access in the browser.`
-          : `This MCP server requires authorization.${detail ? ` ${detail}` : ''} Authorize it under Settings → MCP servers.`,
+          : `This MCP server requires authorization.${detail ? ` ${detail}` : ''} Add an authentication header, or save it and use Authorize with OAuth.`,
       )
     }
     if (!res.ok) {

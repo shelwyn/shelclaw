@@ -479,25 +479,54 @@ export function getIntegrationSecretJson<T>(
   return row ? decryptJson<T>(s(row.ciphertext), fallback) : fallback
 }
 
+function mergeCredentialSecret(
+  serverId: string,
+  name: 'env' | 'headers',
+  incoming: Record<string, string> | undefined,
+  keys: string[] | undefined,
+): void {
+  if (incoming === undefined && keys === undefined) return
+  const existing = getIntegrationSecretJson<Record<string, string>>(
+    'mcp_server',
+    serverId,
+    name,
+    {},
+  )
+  const next: Record<string, string> = {}
+  if (keys === undefined) {
+    for (const [key, value] of Object.entries(incoming || {})) {
+      const trimmed = key.trim()
+      if (trimmed) next[trimmed] = value
+    }
+  } else {
+    for (const rawKey of keys) {
+      const key = rawKey.trim()
+      if (!key) continue
+      const value = incoming?.[key]
+      if (value !== undefined && value !== '') next[key] = value
+      else if (existing[key] !== undefined) next[key] = existing[key]
+      else next[key] = value ?? ''
+    }
+  }
+  if (Object.keys(next).length) setIntegrationSecret('mcp_server', serverId, name, next)
+  else deleteIntegrationSecret('mcp_server', serverId, name)
+}
+
 function saveMcpSecrets(
   serverId: string,
   env: Record<string, string> | undefined,
   headers: Record<string, string> | undefined,
   clear: boolean,
+  envKeys?: string[],
+  headerKeys?: string[],
 ): void {
   if (clear) {
     deleteIntegrationSecret('mcp_server', serverId, 'env')
     deleteIntegrationSecret('mcp_server', serverId, 'headers')
     return
   }
-  if (env !== undefined) {
-    if (Object.keys(env).length) setIntegrationSecret('mcp_server', serverId, 'env', env)
-    else deleteIntegrationSecret('mcp_server', serverId, 'env')
-  }
-  if (headers !== undefined) {
-    if (Object.keys(headers).length) setIntegrationSecret('mcp_server', serverId, 'headers', headers)
-    else deleteIntegrationSecret('mcp_server', serverId, 'headers')
-  }
+  mergeCredentialSecret(serverId, 'env', env, envKeys)
+  mergeCredentialSecret(serverId, 'headers', headers, headerKeys)
 }
 
 export function getMcpOAuthTokens(serverId: string): McpOAuthTokens | undefined {
@@ -564,6 +593,8 @@ export function updateMcpServer(
     enabled?: boolean
     env?: Record<string, string>
     headers?: Record<string, string>
+    envKeys?: string[]
+    headerKeys?: string[]
     toolInstructions?: Record<string, string>
     clearCredentials?: boolean
   },
@@ -584,7 +615,14 @@ export function updateMcpServer(
     now(),
     serverId,
   )
-  saveMcpSecrets(serverId, input.env, input.headers, Boolean(input.clearCredentials))
+  saveMcpSecrets(
+    serverId,
+    input.env,
+    input.headers,
+    Boolean(input.clearCredentials),
+    input.envKeys,
+    input.headerKeys,
+  )
   if (
     (input.url !== undefined && input.url !== existing.url) ||
     (input.transport !== undefined && input.transport !== existing.transport)

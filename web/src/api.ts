@@ -187,6 +187,20 @@ export const api = {
       ok: boolean
       tools: Array<{ name: string; description: string; inputSchema?: unknown }>
     }>(`/api/mcp/${id}/test`, { method: 'POST' }),
+  testMcpDraft: (body: {
+    serverId?: string
+    name?: string
+    transport: 'stdio' | 'http'
+    command?: string
+    args?: string[]
+    url?: string
+    env?: Record<string, string>
+    headers?: Record<string, string>
+  }) =>
+    request<{
+      ok: boolean
+      tools: Array<{ name: string; description: string; inputSchema?: unknown }>
+    }>('/api/mcp/test-draft', { method: 'POST', ...json(body) }),
   fetchModels: (id: string) =>
     request<{ models: string[]; count: number }>(`/api/providers/${id}/models`, { method: 'POST' }),
   testProvider: (id: string) =>

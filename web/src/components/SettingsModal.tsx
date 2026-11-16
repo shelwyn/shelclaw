@@ -1024,6 +1024,23 @@ function WorkspaceSettings() {
   )
 }
 
+interface CredentialRow {
+  id: string
+  key: string
+  value: string
+}
+
+let credentialRowSeed = 0
+
+function newCredentialRow(key = '', value = ''): CredentialRow {
+  credentialRowSeed += 1
+  return { id: `cred-${credentialRowSeed}`, key, value }
+}
+
+function rowsFromKeys(keys: string[]): CredentialRow[] {
+  return keys.length ? keys.map((key) => newCredentialRow(key)) : [newCredentialRow()]
+}
+
 interface McpFormState {
   id: string
   name: string
@@ -1033,10 +1050,9 @@ interface McpFormState {
   argsText: string
   url: string
   enabled: boolean
-  envText: string
-  headersText: string
+  envRows: CredentialRow[]
+  headerRows: CredentialRow[]
   toolInstructions: Record<string, string>
-  clearCredentials: boolean
 }
 
 const emptyMcpForm = (): McpFormState => ({
@@ -1048,10 +1064,9 @@ const emptyMcpForm = (): McpFormState => ({
   argsText: '',
   url: '',
   enabled: true,
-  envText: '',
-  headersText: '',
+  envRows: [newCredentialRow()],
+  headerRows: [newCredentialRow()],
   toolInstructions: {},
-  clearCredentials: false,
 })
 
 function formFromMcp(server: McpServer): McpFormState {
@@ -1064,30 +1079,86 @@ function formFromMcp(server: McpServer): McpFormState {
     argsText: server.args.join('\n'),
     url: server.url,
     enabled: server.enabled,
-    envText: '',
-    headersText: '',
+    envRows: rowsFromKeys(server.envKeys),
+    headerRows: rowsFromKeys(server.headerKeys),
     toolInstructions: { ...server.toolInstructions },
-    clearCredentials: false,
   }
 }
 
-function parseCredentialLines(text: string): Record<string, string> | null {
+function credentialRowsToRecord(rows: CredentialRow[]): Record<string, string> | null {
   const result: Record<string, string> = {}
-  for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    if (!line || line.startsWith('#')) continue
-    const equal = line.indexOf('=')
-    const colon = line.indexOf(':')
-    let index = -1
-    if (equal >= 0 && (colon < 0 || equal < colon)) index = equal
-    else if (colon >= 0) index = colon
-    if (index <= 0) return null
-    const key = line.slice(0, index).trim()
-    const value = line.slice(index + 1).trim()
-    if (!key) return null
-    result[key] = value
+  for (const row of rows) {
+    const key = row.key.trim()
+    if (!key) continue
+    if (Object.prototype.hasOwnProperty.call(result, key)) return null
+    result[key] = row.value
   }
   return result
+}
+
+function credentialRowKeys(rows: CredentialRow[]): string[] {
+  return rows.map((row) => row.key.trim()).filter(Boolean)
+}
+
+function CredentialRows({
+  rows,
+  onChange,
+  keyPlaceholder,
+  valuePlaceholder,
+  addLabel,
+}: {
+  rows: CredentialRow[]
+  onChange: (rows: CredentialRow[]) => void
+  keyPlaceholder: string
+  valuePlaceholder: string
+  addLabel: string
+}) {
+  const update = (index: number, patch: Partial<CredentialRow>) => {
+    onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
+  }
+  const remove = (index: number) => {
+    const next = rows.filter((_, rowIndex) => rowIndex !== index)
+    onChange(next.length ? next : [newCredentialRow()])
+  }
+  return (
+    <div className="space-y-2">
+      {rows.map((row, index) => (
+        <div
+          key={row.id}
+          className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_auto] items-center gap-2"
+        >
+          <Input
+            value={row.key}
+            onChange={(event) => update(index, { key: event.target.value })}
+            placeholder={keyPlaceholder}
+            className="font-mono text-[11.5px]"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <Input
+            value={row.value}
+            onChange={(event) => update(index, { value: event.target.value })}
+            placeholder={valuePlaceholder}
+            className="font-mono text-[11.5px]"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            type="button"
+            onClick={() => remove(index)}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-faint hover:bg-panel2 hover:text-danger"
+            title="Remove"
+            aria-label="Remove row"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      <Button variant="ghost" size="sm" onClick={() => onChange([...rows, newCredentialRow()])}>
+        <Plus className="h-3.5 w-3.5" /> {addLabel}
+      </Button>
+    </div>
+  )
 }
 
 function openMcpAuthorization(server: McpServer): Promise<void> {
@@ -1137,6 +1208,9 @@ function McpSettings() {
   const [deleteTarget, setDeleteTarget] = useState<McpServer | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState<McpFormState | null>(null)
+  const [draftTools, setDraftTools] = useState<string[]>([])
+  const [draftError, setDraftError] = useState('')
+  const [draftTesting, setDraftTesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savingTool, setSavingTool] = useState(false)
   const [selectedTool, setSelectedTool] = useState('')
@@ -1165,22 +1239,83 @@ function McpSettings() {
     void load()
   }, [])
 
-  const save = async () => {
+  const startEditing = (form: McpFormState) => {
+    setDraftTools([])
+    setDraftError('')
+    setEditing(form)
+  }
+
+  const draftPayload = (form: McpFormState) => {
+    const env = credentialRowsToRecord(form.envRows)
+    const headers = credentialRowsToRecord(form.headerRows)
+    if (!env || !headers) return null
+    return {
+      serverId: form.id || undefined,
+      name: form.name.trim() || 'MCP draft',
+      transport: form.transport,
+      command: form.command.trim(),
+      args: form.argsText
+        .split('\n')
+        .map((arg) => arg.trim())
+        .filter(Boolean),
+      url: form.url.trim(),
+      env,
+      headers,
+    }
+  }
+
+  const connectDraft = async () => {
     if (!editing) return
-    const env = parseCredentialLines(editing.envText)
-    const headers = parseCredentialLines(editing.headersText)
-    if (!env || !headers) {
-      toast('error', 'Credentials must use one KEY=value pair per line.')
+    const payload = draftPayload(editing)
+    if (!payload) {
+      toast('error', 'Credential keys must be unique.')
       return
     }
+    if (payload.transport === 'stdio' && !payload.command) {
+      toast('error', 'Enter a command for this stdio MCP server.')
+      return
+    }
+    if (payload.transport === 'http' && !/^https?:\/\//i.test(payload.url)) {
+      toast('error', 'Enter a valid http:// or https:// MCP URL.')
+      return
+    }
+    setDraftTesting(true)
+    setDraftError('')
+    try {
+      const result = await api.testMcpDraft(payload)
+      setDraftTools(result.tools.map((tool) => tool.name))
+      toast(
+        'success',
+        `${result.tools.length} tool${result.tools.length === 1 ? '' : 's'} found.`,
+      )
+    } catch (err) {
+      setDraftTools([])
+      setDraftError(errorText(err))
+      toast('error', errorText(err))
+    } finally {
+      setDraftTesting(false)
+    }
+  }
+
+  const save = async () => {
+    if (!editing) return
+    const env = credentialRowsToRecord(editing.envRows)
+    const headers = credentialRowsToRecord(editing.headerRows)
+    if (!env || !headers) {
+      toast('error', 'Credential keys must be unique.')
+      return
+    }
+    const envKeys = credentialRowKeys(editing.envRows)
+    const headerKeys = credentialRowKeys(editing.headerRows)
     const args = editing.argsText
       .split('\n')
       .map((arg) => arg.trim())
       .filter(Boolean)
     setSaving(true)
     try {
+      let server: McpServer
       if (editing.id) {
-        await api.updateMcpServer(editing.id, {
+        server = await api.updateMcpServer(editing.id, {
           name: editing.name,
           description: editing.description,
           transport: editing.transport,
@@ -1189,13 +1324,14 @@ function McpSettings() {
           url: editing.url,
           enabled: editing.enabled,
           toolInstructions: editing.toolInstructions,
-          ...(editing.envText.trim() ? { env } : {}),
-          ...(editing.headersText.trim() ? { headers } : {}),
-          clearCredentials: editing.clearCredentials,
+          env,
+          headers,
+          envKeys,
+          headerKeys,
         })
         toast('success', 'MCP server updated.')
       } else {
-        await api.createMcpServer({
+        server = await api.createMcpServer({
           name: editing.name,
           description: editing.description,
           transport: editing.transport,
@@ -1208,6 +1344,9 @@ function McpSettings() {
           headers,
         })
         toast('success', 'MCP server connected.')
+      }
+      if (draftTools.length) {
+        await api.testMcpServer(server.id).catch(() => undefined)
       }
       setEditing(null)
       await load()
@@ -1317,7 +1456,7 @@ function McpSettings() {
         <p className="text-[11.5px] text-muted">
           Connect stdio or HTTP MCP servers. Disabled servers are not used by agents.
         </p>
-        <Button variant="secondary" size="sm" onClick={() => setEditing(emptyMcpForm())}>
+        <Button variant="secondary" size="sm" onClick={() => startEditing(emptyMcpForm())}>
           <Plus className="h-3.5 w-3.5" /> Add MCP server
         </Button>
       </div>
@@ -1435,7 +1574,7 @@ function McpSettings() {
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => setEditing(formFromMcp(server))}
+                    onClick={() => startEditing(formFromMcp(server))}
                     className="inline-flex h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-panel2 hover:text-ink"
                     title="Edit MCP server"
                   >
@@ -1469,13 +1608,22 @@ function McpSettings() {
                 Cancel
               </Button>
               <Button
+                variant="secondary"
+                size="md"
+                loading={draftTesting}
+                disabled={!editing.name.trim()}
+                onClick={() => void connectDraft()}
+              >
+                <Zap className="h-3.5 w-3.5" /> Connect &amp; list tools
+              </Button>
+              <Button
                 variant="primary"
                 size="md"
                 loading={saving}
                 disabled={!editing.name.trim()}
                 onClick={() => void save()}
               >
-                {editing.id ? 'Save changes' : 'Connect server'}
+                {editing.id ? 'Save changes' : 'Save server'}
               </Button>
             </>
           }
@@ -1575,59 +1723,81 @@ function McpSettings() {
                 label="Environment variables"
                 hint={
                   editing.id
-                    ? 'Leave blank to keep the stored values. One KEY=value per line. Stored encrypted.'
-                    : 'One KEY=value per line. Stored encrypted.'
+                    ? 'Stored encrypted. Existing values stay hidden — leave a value blank to keep it. Remove a row to delete that variable.'
+                    : 'Stored encrypted. Add as many KEY/value pairs as the server needs.'
                 }
               >
-                <Textarea
-                  value={editing.envText}
-                  onChange={(event) =>
-                    setEditing((current) =>
-                      current ? { ...current, envText: event.target.value } : current,
-                    )
+                <CredentialRows
+                  rows={editing.envRows}
+                  onChange={(rows) =>
+                    setEditing((current) => (current ? { ...current, envRows: rows } : current))
                   }
-                  rows={3}
-                  placeholder="API_KEY=your-key"
-                  className="font-mono text-[11.5px]"
+                  keyPlaceholder="API_KEY"
+                  valuePlaceholder="value"
+                  addLabel="Add environment variable"
                 />
               </Field>
             ) : (
               <Field
-                label="HTTP headers"
+                label="Authentication headers"
                 hint={
                   editing.id
-                    ? 'Leave blank to keep the stored values. One Header: value per line. Stored encrypted.'
-                    : 'One Header: value per line. Stored encrypted. Use this for API keys and auth tokens.'
+                    ? 'Stored encrypted. Existing values stay hidden — leave a value blank to keep it. Remove a row to delete that header.'
+                    : 'Stored encrypted. Add API keys, bearer tokens or any custom headers this server requires.'
                 }
               >
-                <Textarea
-                  value={editing.headersText}
-                  onChange={(event) =>
-                    setEditing((current) =>
-                      current ? { ...current, headersText: event.target.value } : current,
-                    )
+                <CredentialRows
+                  rows={editing.headerRows}
+                  onChange={(rows) =>
+                    setEditing((current) => (current ? { ...current, headerRows: rows } : current))
                   }
-                  rows={3}
-                  placeholder="x-api-key: your-key"
-                  className="font-mono text-[11.5px]"
+                  keyPlaceholder="Authorization"
+                  valuePlaceholder="Bearer your-token"
+                  addLabel="Add header"
                 />
               </Field>
             )}
 
-            {editing.id ? (
-              <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted">
-                <input
-                  type="checkbox"
-                  checked={editing.clearCredentials}
-                  onChange={(event) =>
-                    setEditing((current) =>
-                      current ? { ...current, clearCredentials: event.target.checked } : current,
-                    )
-                  }
-                  className="h-3.5 w-3.5 accent-[var(--ink)]"
-                />
-                Remove all stored credentials for this server
-              </label>
+            {editing.id && (editingServer?.hasEnv || editingServer?.hasHeaders) ? (
+              <p className="text-[10px] leading-relaxed text-faint">
+                This server has {editingServer.envKeys.length + editingServer.headerKeys.length}{' '}
+                stored credential{editingServer.envKeys.length + editingServer.headerKeys.length === 1 ? '' : 's'}.
+                Blank values keep the current secret; removing a row deletes it.
+              </p>
+            ) : null}
+
+            {draftTesting ? (
+              <div className="flex items-center gap-2 rounded-lg border border-line bg-panel2/30 px-3 py-2.5 text-[11px] text-muted">
+                <Spinner className="h-3.5 w-3.5 text-ink" /> Connecting with the current values…
+              </div>
+            ) : draftError ? (
+              <div className="rounded-lg border border-danger/40 bg-danger/5 px-3 py-2.5 text-[10.5px] leading-relaxed text-danger">
+                <div className="font-medium">Could not connect</div>
+                <div className="mt-0.5 break-words">{draftError}</div>
+                <div className="mt-1 text-faint">
+                  If this server needs OAuth, save it first and use the key button in the MCP server
+                  list.
+                </div>
+              </div>
+            ) : draftTools.length ? (
+              <div className="rounded-lg border border-line bg-panel2/30 px-3 py-2.5">
+                <div className="text-[11.5px] font-medium text-ink">
+                  {draftTools.length} tool{draftTools.length === 1 ? '' : 's'} found
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {draftTools.slice(0, 60).map((tool) => (
+                    <span
+                      key={tool}
+                      className="rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[9.5px] text-muted"
+                    >
+                      {tool}
+                    </span>
+                  ))}
+                  {draftTools.length > 60 ? (
+                    <span className="text-[9.5px] text-faint">+{draftTools.length - 60} more</span>
+                  ) : null}
+                </div>
+              </div>
             ) : null}
 
             <div className="rounded-lg border border-line bg-panel2/30 p-3">
@@ -1774,14 +1944,14 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
   const [baseUrl, setBaseUrl] = useState('http://localhost:8080')
   const [mcpUrl, setMcpUrl] = useState('http://localhost:8080/mcp')
   const [uiDefault, setUiDefault] = useState('http://localhost:8080')
-  const [headersText, setHeadersText] = useState('')
+  const [headerRows, setHeaderRows] = useState<CredentialRow[]>([newCredentialRow()])
   const [enabled, setEnabled] = useState(true)
   const [tools, setTools] = useState<string[]>([])
   const [helpOpen, setHelpOpen] = useState(false)
 
   const existing = servers.find((server) => server.name.toLowerCase() === 'activepieces')
 
-  const load = async () => {
+  const load = async (syncForm = true) => {
     setLoading(true)
     try {
       const result = await api.mcpServers()
@@ -1793,31 +1963,35 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
         (server) => server.name.toLowerCase() === 'activepieces',
       )
       if (active) {
-        setMcpUrl(active.url)
-        const internalHost = (() => {
-          try {
-            return new URL(defaultMcp).host
-          } catch {
-            return ''
-          }
-        })()
-        const activeHost = (() => {
-          try {
-            return new URL(active.url).host
-          } catch {
-            return ''
-          }
-        })()
-        setBaseUrl(
-          internalHost && activeHost === internalHost
-            ? defaultUi
-            : active.url.replace(/\/mcp\/?$/i, '') || defaultUi,
-        )
-        setEnabled(active.enabled)
+        if (syncForm) {
+          setMcpUrl(active.url)
+          const internalHost = (() => {
+            try {
+              return new URL(defaultMcp).host
+            } catch {
+              return ''
+            }
+          })()
+          const activeHost = (() => {
+            try {
+              return new URL(active.url).host
+            } catch {
+              return ''
+            }
+          })()
+          setBaseUrl(
+            internalHost && activeHost === internalHost
+              ? defaultUi
+              : active.url.replace(/\/mcp\/?$/i, '') || defaultUi,
+          )
+          setEnabled(active.enabled)
+          setHeaderRows(rowsFromKeys(active.headerKeys))
+        }
         setTools(active.tools.map((tool) => tool.name))
-      } else {
+      } else if (syncForm) {
         setMcpUrl(defaultMcp)
         setBaseUrl(defaultUi)
+        setHeaderRows([newCredentialRow()])
       }
     } catch (err) {
       toast('error', errorText(err))
@@ -1831,11 +2005,12 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
   }, [])
 
   const save = async () => {
-    const headers = parseCredentialLines(headersText)
+    const headers = credentialRowsToRecord(headerRows)
     if (!headers) {
-      toast('error', 'Headers must use one Header: value pair per line.')
+      toast('error', 'Header names must be unique.')
       return
     }
+    const headerKeys = credentialRowKeys(headerRows)
     if (!/^https?:\/\//i.test(mcpUrl.trim())) {
       toast('error', 'Enter a valid http:// or https:// MCP URL.')
       return
@@ -1847,7 +2022,8 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
         server = await api.updateMcpServer(existing.id, {
           url: mcpUrl.trim(),
           enabled,
-          ...(headersText.trim() ? { headers } : {}),
+          headers,
+          headerKeys,
         })
         toast('success', 'Activepieces connection updated.')
       } else {
@@ -1866,7 +2042,7 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
         const next = current.filter((entry) => entry.id !== server.id)
         return [...next, server]
       })
-      setHeadersText('')
+      setHeaderRows(rowsFromKeys(server.headerKeys))
       await load()
       await test(server.id)
     } catch (err) {
@@ -1889,7 +2065,7 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
           result.tools.length === 1 ? '' : 's'
         }`,
       )
-      await load()
+      await load(false)
     } catch (err) {
       toast('error', `Activepieces: ${errorText(err)}`)
     } finally {
@@ -1985,15 +2161,15 @@ function ActivepiecesSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
       </Field>
 
       <Field
-        label="Headers / token"
-        hint="Optional. Prefer “Authorize with Activepieces”. Leave blank to keep an existing token. Stored encrypted and never sent to a model."
+        label="Authentication headers (optional)"
+        hint="Prefer “Authorize with Activepieces” below. Add static headers only if your MCP endpoint requires them. Values are encrypted and never sent to a model."
       >
-        <Textarea
-          value={headersText}
-          onChange={(event) => setHeadersText(event.target.value)}
-          rows={3}
-          placeholder="Authorization: Bearer your-token"
-          className="font-mono text-[11.5px]"
+        <CredentialRows
+          rows={headerRows}
+          onChange={setHeaderRows}
+          keyPlaceholder="Authorization"
+          valuePlaceholder="Bearer your-token"
+          addLabel="Add header"
         />
       </Field>
 

@@ -177,6 +177,7 @@ export interface Bootstrap {
   activeRuns: Run[]
   providerKinds: ProviderKind[]
   authRequired: boolean
+  runtime?: { docker: boolean }
 }
 
 export interface ChatDetail {

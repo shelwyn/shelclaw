@@ -41,4 +41,5 @@ export const config = {
   claudeBin: process.env.CLAUDE_BIN || 'claude',
   activepiecesMcpUrl: (process.env.ACTIVEPIECES_MCP_URL || '').trim(),
   activepiecesUiUrl: (process.env.ACTIVEPIECES_UI_URL || '').trim(),
+  docker: process.env.SHELCLAW_DOCKER === '1',
 }

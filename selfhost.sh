@@ -22,7 +22,22 @@ cd "$ROOT"
 CONFIG_DIR="$ROOT/.selfhost"
 AP_ENV="$CONFIG_DIR/activepieces.env"
 APP_ENV="$CONFIG_DIR/shelclaw.env"
-COMPOSE="docker compose --env-file $AP_ENV -f docker-compose.selfhost.yml"
+WORKSPACE_ROOT="${SHELCLAW_WORKSPACE_ROOT:-${HOME:-$ROOT}}"
+WORKSPACE_OVERRIDE="$CONFIG_DIR/workspace.override.yml"
+
+mkdir -p "$CONFIG_DIR"
+if [ -n "$WORKSPACE_ROOT" ] && mkdir -p "$WORKSPACE_ROOT" 2>/dev/null && [ -d "$WORKSPACE_ROOT" ]; then
+  cat >"$WORKSPACE_OVERRIDE" <<EOF
+services:
+  shelclaw:
+    volumes:
+      - "${WORKSPACE_ROOT}:${WORKSPACE_ROOT}"
+EOF
+  COMPOSE="docker compose --env-file $AP_ENV -f docker-compose.selfhost.yml -f $WORKSPACE_OVERRIDE"
+else
+  WORKSPACE_ROOT=""
+  COMPOSE="docker compose --env-file $AP_ENV -f docker-compose.selfhost.yml"
+fi
 
 say() { printf '%s\n' "$1"; }
 die() { printf 'Error: %s\n' "$1" >&2; exit 1; }
@@ -147,6 +162,9 @@ start() {
   need_docker
   ensure_config
   say "Building and starting the self-hosted stack..."
+  if [ -n "$WORKSPACE_ROOT" ]; then
+    say "Host workspace mount: $WORKSPACE_ROOT -> $WORKSPACE_ROOT"
+  fi
   $COMPOSE up -d --build
   ap_port="$(grep '^ACTIVEPIECES_PORT=' "$AP_ENV" | cut -d= -f2)"
   shelclaw_port="$(grep '^PORT=' "$APP_ENV" | cut -d= -f2)"

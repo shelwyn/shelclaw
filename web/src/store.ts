@@ -70,6 +70,7 @@ interface AppState {
   needsAuth: boolean
   authError: string
   connected: boolean
+  docker: boolean
 
   providers: Provider[]
   projects: Project[]
@@ -482,6 +483,7 @@ async function doInit(): Promise<void> {
       needsAuth: false,
       authError: '',
       bootError: '',
+      docker: Boolean(data.runtime?.docker),
       providers: data.providers,
       projects: data.projects,
       agents: data.agents,
@@ -553,6 +555,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   needsAuth: false,
   authError: '',
   connected: false,
+  docker: false,
 
   providers: [],
   projects: [],
@@ -620,6 +623,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           chats: data.chats,
           settings: data.settings,
           activeRuns: data.activeRuns,
+          docker: Boolean(data.runtime?.docker),
           activeProjectId,
           activeChatId:
             state.detail && !active ? '' : state.activeChatId,

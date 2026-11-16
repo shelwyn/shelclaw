@@ -73,7 +73,7 @@ Project rows can be dragged to reorder them. Use the pin icon to keep multiple p
 
 ### Workspace folder
 
-A workspace folder is **required** when creating a project and there is no implicit default. The server must be able to create and write to the path. You can change it later in project settings (the pencil icon) until files have been uploaded.
+A workspace folder is **required** when creating a project and there is no implicit default. The server must be able to create and write to the path. You can change it later in project settings (the pencil icon) until files have been uploaded. In Docker, use `./selfhost.sh` so your host home is mounted at the same absolute path, or set `SHELCLAW_WORKSPACE_ROOT` to the folder you want to mount.
 
 ```
 <workspace>/
@@ -452,18 +452,24 @@ If **Connections → All** is empty or **New Connection** says **No pieces found
 ### Docker (recommended)
 
 ```bash
-cp .env.example .env        # optional: set APP_TOKEN
-docker compose up -d --build
+./selfhost.sh               # app + Activepieces
+# or: ./selfhost.sh activepieces   # Activepieces only for host development
 # http://localhost:8787
+```
+
+The script builds the stack, generates secrets and CA config, and mounts your home directory into the Shelclaw container at the **same absolute path**. That means project workspace folders such as `/Users/you/code/project` work in Docker without extra configuration. Narrow the mount when needed:
+
+```bash
+SHELCLAW_WORKSPACE_ROOT=/Users/you/code ./selfhost.sh
 ```
 
 The app and its SQLite database are stored in the **`shelclaw-data` named volume**. Harness connections, projects, agents, chats, uploads and memory survive container rebuilds and restarts.
 
 - `docker compose down` keeps the data volume.
 - `docker compose down -v` deletes the database and all app data.
-- Change the host port with `HOST_PORT=9000 docker compose up -d`.
-- Inspect logs with `docker compose logs -f`.
-- Custom project workspace folders must be mounted into the container and use container-visible paths (for example, mount a host folder at `/workspaces` and enter `/workspaces/my-project`).
+- Change the host port with `HOST_PORT=9000 ./selfhost.sh`.
+- Inspect logs with `./selfhost.sh logs`.
+- `/data/workspaces/<project>` is also writable inside the container when you do not want to use a host folder.
 
 Back up or restore the database:
 
@@ -499,7 +505,16 @@ rm .npmrc.local
 
 Multi-arch images build natively on Apple Silicon, x86 PCs and **64-bit** Raspberry Pi OS (`arm64`).
 
-**Harness binaries:** the image includes Node but not `opencode`. Install it in a derived image, or run OpenCode on the host. For OpenCode server on the host, use `http://host.docker.internal:4096` on Docker Desktop or the host's LAN IP on Linux. For the OpenCode CLI, install the binary inside the container and mount its credential/config directories.
+**Harness binaries:** the image includes Node but not `opencode`. The **OpenCode CLI** option therefore fails with a clear “not installed” message inside Docker; the app server no longer crashes. The recommended Docker setup is **OpenCode server**:
+
+```bash
+# on your computer
+opencode serve --hostname 0.0.0.0 --port 4096
+```
+
+Then in Shelclaw choose **OpenCode server**, set the URL to `http://host.docker.internal:4096`, and paste the password printed by `opencode serve`. Set `OPENCODE_PASSWORD='choose-a-password'` before starting the server if you want a stable password.
+
+You can still install the OpenCode CLI inside a derived image and mount its credential/config directories if you prefer the CLI harness.
 
 ### Plain Node
 

@@ -24,26 +24,40 @@ export function stripAnsi(text: string): string {
 
 export async function* spawnChunks(options: SpawnOptions): AsyncGenerator<string> {
   const { command, args, input, signal, cwd, env, timeoutMs } = options
-  const child = spawn(command, args, {
-    cwd: cwd || process.cwd(),
-    env: { ...process.env, ...(env || {}) },
-    stdio: ['pipe', 'pipe', 'pipe'],
-    shell: false,
-  })
+  let child: ReturnType<typeof spawn>
+  try {
+    child = spawn(command, args, {
+      cwd: cwd || process.cwd(),
+      env: { ...process.env, ...(env || {}) },
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: false,
+    })
+  } catch (error) {
+    throw new Error(
+      `Could not start "${command}": ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 
   let stderr = ''
-  child.stderr.on('data', (chunk: Buffer) => {
+  let spawnError: Error | undefined
+  const noteError = (error: Error) => {
+    if (!spawnError) spawnError = error
+  }
+  child.on('error', noteError)
+  child.stdout?.on('error', noteError)
+  child.stderr?.on('error', noteError)
+  child.stderr?.on('data', (chunk: Buffer) => {
     stderr = (stderr + chunk.toString()).slice(-8000)
   })
-  child.stdin.on('error', () => {
+  child.stdin?.on('error', () => {
     // The process may exit before consuming the prompt (EPIPE); the exit code
     // and stderr carry the useful error.
   })
 
   if (input != null) {
-    child.stdin.write(input)
+    child.stdin?.write(input)
   }
-  child.stdin.end()
+  child.stdin?.end()
 
   let timer: NodeJS.Timeout | undefined
   if (timeoutMs) {
@@ -58,17 +72,28 @@ export async function* spawnChunks(options: SpawnOptions): AsyncGenerator<string
   }
   signal?.addEventListener('abort', abort, { once: true })
 
-  const exit = new Promise<number>((resolve, reject) => {
-    child.on('error', reject)
+  const exit = new Promise<number>((resolve) => {
+    child.on('error', () => resolve(1))
     child.on('close', (code) => resolve(code ?? 1))
   })
 
   try {
-    for await (const chunk of child.stdout) {
-      const text = chunk.toString()
-      if (text) yield text
+    if (child.stdout) {
+      try {
+        for await (const chunk of child.stdout) {
+          const text = chunk.toString()
+          if (text) yield text
+        }
+      } catch (error) {
+        if (!spawnError) {
+          spawnError = error instanceof Error ? error : new Error(String(error))
+        }
+      }
     }
     const code = await exit
+    if (spawnError) {
+      throw new Error(`Could not start "${command}": ${spawnError.message}`)
+    }
     if (signal?.aborted) throw new Error('Aborted')
     if (code !== 0) {
       const detail = stderr.trim() || 'no error output'
@@ -273,15 +298,30 @@ async function listCliModels(provider: Provider): Promise<string[]> {
 async function testCli(provider: Provider): Promise<string> {
   const cfg = providerConfig(provider)
   const command = cliCommand(provider)
-  const output = await runOnce({
-    command,
-    args: ['--version'],
-    timeoutMs: 15000,
-    cwd: cfg.workdir || undefined,
-    env: cfg.env,
-  })
-  const version = stripAnsi(output).trim().split('\n')[0] || 'installed'
-  return `CLI found · ${version}`
+  try {
+    const output = await runOnce({
+      command,
+      args: ['--version'],
+      timeoutMs: 15000,
+      cwd: cfg.workdir || undefined,
+      env: cfg.env,
+    })
+    const version = stripAnsi(output).trim().split('\n')[0] || 'installed'
+    return `CLI found · ${version}`
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/ENOENT|not found|Could not start/i.test(message)) {
+      if (provider.kind === 'opencode') {
+        throw new Error(
+          `The OpenCode CLI ("${command}") is not installed in the Shelclaw server. In Docker, run \`opencode serve --hostname 0.0.0.0 --port 4096\` on your computer and use the OpenCode server harness at http://host.docker.internal:4096. Alternatively install the CLI inside the container.`,
+        )
+      }
+      throw new Error(
+        `The harness command ("${command}") is not installed in the Shelclaw server. Install it in the container or use a server-based harness.`,
+      )
+    }
+    throw error
+  }
 }
 
 export const claudeCodeAdapter: ProviderAdapter = {

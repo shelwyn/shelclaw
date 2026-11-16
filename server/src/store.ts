@@ -321,7 +321,9 @@ export function resolveWorkspacePath(input: string | undefined): string {
     fs.accessSync(root, fs.constants.W_OK)
   } catch (err) {
     throw new AppError(
-      `Cannot use workspace folder "${root}": ${err instanceof Error ? err.message : String(err)}`,
+      `Cannot use workspace folder "${root}": ${
+        err instanceof Error ? err.message : String(err)
+      }. If Shelclaw runs in Docker, use a folder under /data or a host folder mounted into the container (start the stack with ./selfhost.sh; it mounts SHELCLAW_WORKSPACE_ROOT, default: your home, at the same path).`,
       400,
     )
   }

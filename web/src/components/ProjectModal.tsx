@@ -156,7 +156,7 @@ export function ProjectModal({ projectId }: { projectId?: string }) {
           hint={
             existing
               ? 'Uploaded files, memory notes, and embeddings live here. The folder cannot be moved after files are uploaded.'
-              : 'Required. The server must be able to create and write to this folder. Uploaded files, memory notes, and embeddings will live here.'
+              : 'Required. The Shelclaw server must be able to create and write to this folder. In Docker, use a mounted host folder (for example /Users/you/code/project when started with ./selfhost.sh) or /data/workspaces/project.'
           }
         >
           <Input

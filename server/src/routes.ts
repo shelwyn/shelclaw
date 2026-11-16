@@ -246,6 +246,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       activeRuns: activeRuns(),
       providerKinds: PROVIDER_KINDS,
       authRequired: Boolean(config.appToken),
+      runtime: { docker: config.docker },
     }
   })
 

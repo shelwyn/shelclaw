@@ -53,13 +53,13 @@ const TEMPLATES: ProviderTemplate[] = [
     label: 'OpenCode server',
     kind: 'opencode-server',
     baseUrl: 'http://127.0.0.1:4096',
-    hint: 'Connect to a running `opencode serve` with its URL and password.',
+    hint: 'Connect to a running `opencode serve` with its URL and password. In Docker, use http://host.docker.internal:4096 for a server running on the host.',
   },
   {
     label: 'OpenCode CLI',
     kind: 'opencode',
     command: 'opencode',
-    hint: 'Runs `opencode run` locally and uses your OpenCode configuration.',
+    hint: 'Runs `opencode run` on the Shelclaw server. The Docker image does not include the CLI by default; use the OpenCode server option or install it inside the container.',
   },
 ]
 
@@ -236,6 +236,10 @@ function ProviderFormView({
 }) {
   const refresh = useAppStore((state) => state.refresh)
   const toast = useAppStore((state) => state.toast)
+  const docker = useAppStore((state) => state.docker)
+  const defaultOpenCodeServerUrl = docker
+    ? 'http://host.docker.internal:4096'
+    : 'http://127.0.0.1:4096'
   const [form, setForm] = useState<ProviderForm>(() =>
     provider ? formFromProvider(provider) : emptyForm(),
   )
@@ -263,7 +267,7 @@ function ProviderFormView({
         return {
           ...current,
           kind,
-          baseUrl: needsDefaultUrl ? 'http://127.0.0.1:4096' : current.baseUrl,
+          baseUrl: needsDefaultUrl ? defaultOpenCodeServerUrl : current.baseUrl,
           agent: current.agent || 'build',
         }
       }
@@ -277,7 +281,10 @@ function ProviderFormView({
       ...current,
       name: current.name || template.label,
       kind: template.kind,
-      baseUrl: template.baseUrl ?? (isOpenCodeServer(template.kind) ? current.baseUrl : ''),
+      baseUrl:
+        template.kind === 'opencode-server'
+          ? defaultOpenCodeServerUrl
+          : template.baseUrl ?? '',
       apiVersion: '',
       defaultModel: template.defaultModel ?? '',
       command: template.command ?? '',
@@ -490,7 +497,7 @@ function ProviderFormView({
 
           <Field
             label="Base URL"
-            hint="Complete link printed by `opencode serve`, including scheme, host and port."
+            hint="Complete link printed by `opencode serve`, including scheme, host and port. In Docker, a server running on your computer is usually http://host.docker.internal:4096."
           >
             <Input
               value={form.baseUrl}
@@ -553,7 +560,7 @@ function ProviderFormView({
         </>
       ) : (
         <>
-          <Field label="Command" hint="Executable on the server host.">
+          <Field label="Command" hint="Executable on the Shelclaw server. The Docker image does not include the OpenCode CLI by default.">
             <Input
               value={form.command}
               onChange={(event) => update('command', event.target.value)}
